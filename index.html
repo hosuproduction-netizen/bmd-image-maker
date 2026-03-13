@@ -763,7 +763,22 @@ function App() {
   const estPhotoH = size.h * estRatio;
   const estTextH = Math.max(size.h * 0.15, size.h - estPhotoH);
   const estTotalH = cfg.layout === "split" ? estPhotoH + estTextH : size.h;
-  const previewScale = Math.min(420/size.w, 480/estTotalH);
+
+  const previewContainerRef = useRef(null);
+  const [previewScale, setPreviewScale] = useState(0.4);
+  useEffect(() => {
+    const updateScale = () => {
+      const el = previewContainerRef.current;
+      if (!el) return;
+      const pad = 40;
+      const availW = el.clientWidth - pad * 2;
+      const availH = el.clientHeight - pad * 2;
+      setPreviewScale(Math.min(availW / size.w, availH / estTotalH, 1));
+    };
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, [size, estTotalH]);
 
   const inp = (label, key, placeholder, multi) => (
     <div style={{ marginBottom:18 }}>
@@ -1087,7 +1102,7 @@ function App() {
           </div>
 
           {/* Canvas preview */}
-          <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center",
+          <div ref={previewContainerRef} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center",
             justifyContent:"center", padding:"12px 28px", gap:6, minHeight:0 }}>
             <div style={{ position:"relative" }}>
               <div ref={dragAreaRef}
