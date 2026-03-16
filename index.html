@@ -210,21 +210,24 @@ function drawCanvas(canvas, config, size, imgEl) {
   const topPad  = vPad + (freeSpace - vPad*2) * (vAlign * 0.5 + 0.5);
   const startY  = photoH + topPad;
 
+  const align = config.textAlign || "center";
+  const textX = align === "left" ? pad : align === "right" ? W - pad : W/2;
+
   hLines.forEach((line,i) => {
     ctx.font=`900 ${hSize}px 'Arial Black', Arial`;
-    ctx.textAlign="center"; ctx.textBaseline="top";
+    ctx.textAlign=align; ctx.textBaseline="top";
     ctx.fillStyle="rgba(0,0,0,0.4)";
-    ctx.fillText(line, W/2+2, startY+i*hLH+2);
+    ctx.fillText(line, textX+2, startY+i*hLH+2);
     ctx.fillStyle=accent;
-    ctx.fillText(line, W/2, startY+i*hLH);
+    ctx.fillText(line, textX, startY+i*hLH);
   });
 
   const bStartY = startY + totalH + gap;
   bLines.forEach((line,i) => {
     ctx.font=`${bSize}px Arial`;
     ctx.fillStyle="rgba(255,255,255,0.82)";
-    ctx.textAlign="center"; ctx.textBaseline="top";
-    ctx.fillText(line, W/2, bStartY+i*bLH);
+    ctx.textAlign=align; ctx.textBaseline="top";
+    ctx.fillText(line, textX, bStartY+i*bLH);
   });
 
   if (config.showBranding) {
@@ -325,29 +328,32 @@ function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
   const topOffset = textAreaTop + freeSpace * (vAlign * 0.5 + 0.5);
   let curY = topOffset;
 
+  const align = config.textAlign || "center";
+  const oTextX = align === "left" ? textPadX : align === "right" ? W - textPadX : W / 2;
+
   if (subText) {
     ctx.font = `bold ${subSize}px Arial`;
-    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.textAlign = align; ctx.textBaseline = "top";
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(subText, W / 2, curY);
+    ctx.fillText(subText, oTextX, curY);
     curY += subSize * 1.6;
   }
 
   hLines.forEach((line, i) => {
     ctx.font = `900 ${hSize}px 'Arial Black', Arial`;
-    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.textAlign = align; ctx.textBaseline = "top";
     ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillText(line, W / 2 + 2, curY + i * hLH + 2);
+    ctx.fillText(line, oTextX + 2, curY + i * hLH + 2);
     ctx.fillStyle = accent;
-    ctx.fillText(line, W / 2, curY + i * hLH);
+    ctx.fillText(line, oTextX, curY + i * hLH);
   });
   curY += totalH + gap;
 
   bLines.forEach((line, i) => {
     ctx.font = `${bSize}px Arial`;
     ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.textAlign = "center"; ctx.textBaseline = "top";
-    ctx.fillText(line, W / 2, curY + i * bLH);
+    ctx.textAlign = align; ctx.textBaseline = "top";
+    ctx.fillText(line, oTextX, curY + i * bLH);
   });
 
   const fixedPad = W * 0.08;
@@ -487,7 +493,7 @@ function App() {
     company: savedCompany || "하이픽셀플러스", headSizeScale: 1, bodySizeScale: 1,
     textGap: 1, textVAlign: 0, bodyLineHeight: 1,
     layout: "split", overlayStart: 0.35, textPadX: 0.08,
-    showBadge: false,
+    showBadge: false, textAlign: "center",
   });
 
   // Save company name to localStorage
@@ -671,7 +677,7 @@ function App() {
     // Only track non-text changes (sliders, toggles, colors)
     const nonTextKeys = ["photoRatio","showBranding","accentColor","imgScale",
       "imgOffsetX","imgOffsetY","headSizeScale","bodySizeScale",
-      "textGap","textVAlign","bodyLineHeight","layout","overlayStart","textPadX","showBadge"];
+      "textGap","textVAlign","bodyLineHeight","layout","overlayStart","textPadX","showBadge","textAlign"];
     const changed = nonTextKeys.some(k => prev[k] !== curr[k]);
     if (changed) {
       historyRef.current.push(prev);
@@ -1264,6 +1270,17 @@ function App() {
 
               <div style={{ minWidth:170, flex:1 }}>
                 <div style={{ fontSize:11, color:"#999", fontWeight:700, marginBottom:6 }}>위치 / 여백</div>
+                <div style={{ display:"flex", gap:3, marginBottom:6 }}>
+                  {[{id:"left",label:"왼쪽"},{id:"center",label:"가운데"},{id:"right",label:"오른쪽"}].map(a => (
+                    <button key={a.id} onClick={() => setCfg({...cfg, textAlign:a.id})}
+                      style={{ flex:1, padding:"5px 0", borderRadius:4, fontSize:11, fontWeight:600,
+                        cursor:"pointer", border:"none",
+                        background: cfg.textAlign===a.id ? "#222" : "#f0f0f0",
+                        color: cfg.textAlign===a.id ? "#fff" : "#888" }}>
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
                 <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
                   <span style={{ fontSize:11, color:"#888", minWidth:40 }}>제목↔본문</span>
                   <input type="range" min="0" max="4" step="0.1" value={cfg.textGap}
@@ -1307,7 +1324,7 @@ function App() {
                     <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{Math.round(cfg.overlayStart*100)}%</span>
                   </div>
                 )}
-                <button onClick={() => setCfg({...cfg, imgOffsetX:0, imgOffsetY:0, imgScale:1, headSizeScale:1, bodySizeScale:1, textGap:1, textVAlign:0, bodyLineHeight:1, overlayStart:0.35, textPadX:0.08, photoRatio:0.60})}
+                <button onClick={() => setCfg({...cfg, imgOffsetX:0, imgOffsetY:0, imgScale:1, headSizeScale:1, bodySizeScale:1, textGap:1, textVAlign:0, bodyLineHeight:1, overlayStart:0.35, textPadX:0.08, photoRatio:0.60, textAlign:"center"})}
                   style={{ marginTop:8, width:"100%", background:"transparent", border:"1px solid #d4d4d4",
                     color:"#888", padding:"5px 0", borderRadius:4, fontSize:11, cursor:"pointer" }}>
                   ↺ 초기화
