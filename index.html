@@ -650,19 +650,60 @@ function App() {
   // Global paste listener (Ctrl+V / Cmd+V anywhere on page)
   useEffect(() => {
     const onPaste = (e) => {
+      // Skip if typing in input/textarea
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
       const items = e.clipboardData?.items;
       if (!items) return;
+
+      // 1. Try direct image data first
       for (const item of items) {
         if (item.type.startsWith("image/")) {
           loadImageFile(item.getAsFile());
-          setPhotoMode("upload");
-          break;
+          return;
         }
       }
+
+      // 2. Try HTML (some sites copy images as HTML <img>)
+      const html = e.clipboardData.getData("text/html");
+      if (html) {
+        const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+        if (match && match[1]) {
+          tryLoadImageUrl(match[1]);
+          return;
+        }
+      }
+
+      // 3. Try plain text URL
+      const text = e.clipboardData.getData("text/plain")?.trim();
+      if (text && /^https?:\/\/.+\.(jpg|jpeg|png|webp|gif)/i.test(text)) {
+        tryLoadImageUrl(text);
+      }
     };
+
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   }, []);
+
+  const tryLoadImageUrl = (url) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => setPhotoUrl(url);
+    img.onerror = () => {
+      // Try CORS proxy
+      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+      const img2 = new Image();
+      img2.crossOrigin = "anonymous";
+      img2.onload = () => setPhotoUrl(proxyUrl);
+      img2.onerror = () => {
+        // Last resort: use directly without crossOrigin (will work for display but not export)
+        setPhotoUrl(url);
+      };
+      img2.src = proxyUrl;
+    };
+    img.src = url;
+  };
 
   // ── Undo history (cfg only, not text fields)
   const historyRef = useRef([]);          // stack of past cfg snapshots
