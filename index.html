@@ -176,7 +176,7 @@ function drawCanvas(canvas, config, size, imgEl) {
 
   let hSize = Math.round(W*0.072 * (config.headSizeScale ?? 1));
   ctx.font=`900 ${hSize}px 'Arial Black', Arial`;
-  let hLines = wrapText(ctx, config.headline||"큰 제목", W-pad*2);
+  let hLines = wrapText(ctx, config.headline||"", W-pad*2);
 
   let bSize  = Math.round(W*0.034 * (config.bodySizeScale ?? 1));
   ctx.font=`${bSize}px Arial`;
@@ -198,7 +198,7 @@ function drawCanvas(canvas, config, size, imgEl) {
     hLH    = hSize * 1.15;
     bLH    = bSize * 1.55;
     ctx.font=`900 ${hSize}px 'Arial Black', Arial`;
-    hLines = wrapText(ctx, config.headline||"큰 제목", W-pad*2);
+    hLines = wrapText(ctx, config.headline||"", W-pad*2);
     ctx.font=`${bSize}px Arial`;
     totalH = hLines.length * hLH;
     totalB = bLines.length * bLH;
@@ -285,7 +285,7 @@ function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
   // ── Measure text (independent of gradient position)
   let hSize = Math.round(W * 0.08 * (config.headSizeScale ?? 1));
   ctx.font = `900 ${hSize}px 'Arial Black', Arial`;
-  let hLines = wrapText(ctx, config.headline || "큰 제목", W - textPadX * 2);
+  let hLines = wrapText(ctx, config.headline || "", W - textPadX * 2);
 
   let bSize = Math.round(W * 0.034 * (config.bodySizeScale ?? 1));
   ctx.font = `${bSize}px Arial`;
@@ -314,7 +314,7 @@ function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
     hLH = hSize * 1.15;
     bLH = bSize * 1.55;
     ctx.font = `900 ${hSize}px 'Arial Black', Arial`;
-    hLines = wrapText(ctx, config.headline || "큰 제목", W - textPadX * 2);
+    hLines = wrapText(ctx, config.headline || "", W - textPadX * 2);
     totalH = hLines.length * hLH;
     totalB = bLines.length * bLH;
     contentH = (subText ? subSize * 1.6 : 0) + totalH + gap + totalB;
@@ -462,7 +462,7 @@ function App() {
   const defaultSlide = (overrides={}) => ({
     id: Date.now() + Math.random(),
     photoUrl: null,
-    headline:  "제목을 입력하세요",
+    headline:  "",
     body:      "본문을 입력하세요.",
     badge:     "",
     imgScale:  1, imgOffsetX: 0, imgOffsetY: 0,
@@ -555,43 +555,52 @@ function App() {
   const [brushSize, setBrushSize] = useState(40);
   const blurStrokeRef = useRef(null); // current stroke being painted
 
-  // Convert mouse event to full-resolution canvas coordinates
+  // Extract clientX/clientY from mouse or touch event
+  const getPointer = (e) => {
+    if (e.touches && e.touches.length > 0) return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+    if (e.changedTouches && e.changedTouches.length > 0) return { clientX: e.changedTouches[0].clientX, clientY: e.changedTouches[0].clientY };
+    return { clientX: e.clientX, clientY: e.clientY };
+  };
+
+  // Convert event to full-resolution canvas coordinates
   const toCanvasCoords = (e) => {
     const rect = dragAreaRef.current?.getBoundingClientRect();
     if (!rect) return null;
-    const x = (e.clientX - rect.left) / rect.width * size.w;
-    const y = (e.clientY - rect.top) / rect.height * size.h;
+    const p = getPointer(e);
+    const x = (p.clientX - rect.left) / rect.width * size.w;
+    const y = (p.clientY - rect.top) / rect.height * size.h;
     return { x, y };
   };
 
   const onDragStart = (e) => {
+    if (e.touches) e.preventDefault();
+    const p = getPointer(e);
     if (blurMode) {
       const pt = toCanvasCoords(e);
       if (!pt) return;
       setIsDragging(true);
       const r = brushSize / 100 * size.w;
       blurStrokeRef.current = [{ x: pt.x, y: pt.y, r }];
-      // Apply immediately for single click
       updateSlide({ blurStrokes: [...(slide.blurStrokes||[]), blurStrokeRef.current] });
       return;
     }
     if (!photoUrl) return;
     setIsDragging(true);
     dragState.current = {
-      startX: e.clientX,
-      startY: e.clientY,
+      startX: p.clientX,
+      startY: p.clientY,
       startOX: cfg.imgOffsetX,
       startOY: cfg.imgOffsetY,
     };
   };
 
   const onDragMove = (e) => {
+    if (e.touches) e.preventDefault();
     if (blurMode && isDragging && blurStrokeRef.current) {
       const pt = toCanvasCoords(e);
       if (!pt) return;
       const r = brushSize / 100 * size.w;
       blurStrokeRef.current.push({ x: pt.x, y: pt.y, r });
-      // Update the last stroke
       const strokes = [...(slide.blurStrokes||[])];
       strokes[strokes.length - 1] = [...blurStrokeRef.current];
       updateSlide({ blurStrokes: strokes });
@@ -601,8 +610,9 @@ function App() {
     const { startX, startY, startOX, startOY } = dragState.current;
     const rect = dragAreaRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const dx = (e.clientX - startX) / rect.width  * 2;
-    const dy = (e.clientY - startY) / rect.height * 2;
+    const p = getPointer(e);
+    const dx = (p.clientX - startX) / rect.width  * 2;
+    const dy = (p.clientY - startY) / rect.height * 2;
     setCfg(prev => ({
       ...prev,
       imgOffsetX: Math.max(-1, Math.min(1, startOX - dx)),
@@ -716,15 +726,81 @@ function App() {
     tryNext();
   };
 
+  // ── Copyright metadata injection ──
+  const injectMetadata = (dataUrl, mime) => {
+    const copy = cfg.company || "하이픽셀플러스";
+    const year = new Date().getFullYear();
+    const xmpStr = [
+      '<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+      '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
+      '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+      '<rdf:Description',
+      ' xmlns:dc="http://purl.org/dc/elements/1.1/"',
+      ' xmlns:xmpRights="http://ns.adobe.com/xap/1.0/rights/"',
+      ' xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">',
+      `<dc:rights><rdf:Alt><rdf:li xml:lang="x-default">© ${year} ${copy}. All rights reserved. Created with BMD 리셀러 이미지 메이커</rdf:li></rdf:Alt></dc:rights>`,
+      `<dc:creator><rdf:Seq><rdf:li>${copy}</rdf:li></rdf:Seq></dc:creator>`,
+      `<xmpRights:Marked>True</xmpRights:Marked>`,
+      `<photoshop:Credit>${copy} - Blackmagic Design Authorized Reseller</photoshop:Credit>`,
+      '</rdf:Description>',
+      '</rdf:RDF>',
+      '</x:xmpmeta>',
+      '<?xpacket end="w"?>',
+    ].join('\n');
+
+    const bin = atob(dataUrl.split(',')[1]);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+
+    if (mime === "image/jpeg") {
+      // Inject XMP as APP1 marker after SOI (FF D8)
+      const xmpBytes = new TextEncoder().encode('http://ns.adobe.com/xap/1.0/\0' + xmpStr);
+      const marker = new Uint8Array(4 + xmpBytes.length);
+      marker[0] = 0xFF; marker[1] = 0xE1; // APP1
+      const len = xmpBytes.length + 2;
+      marker[2] = (len >> 8) & 0xFF; marker[3] = len & 0xFF;
+      const result = new Uint8Array(2 + marker.length + xmpBytes.length + arr.length - 2);
+      result.set(arr.subarray(0, 2)); // SOI
+      result.set(marker, 2);
+      result.set(xmpBytes, 6);
+      result.set(arr.subarray(2), 2 + marker.length + xmpBytes.length);
+      return URL.createObjectURL(new Blob([result], { type: mime }));
+    } else {
+      // PNG: inject tEXt chunk before IEND
+      const copyright = `© ${year} ${copy}. Blackmagic Design Authorized Reseller`;
+      const key = new TextEncoder().encode('Copyright');
+      const val = new TextEncoder().encode(copyright);
+      const chunkData = new Uint8Array(key.length + 1 + val.length);
+      chunkData.set(key); chunkData[key.length] = 0; chunkData.set(val, key.length + 1);
+      // CRC32
+      const crcTable = (() => { const t = []; for (let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c;} return t; })();
+      const crc32 = (buf) => { let c = 0xFFFFFFFF; const type = new TextEncoder().encode('tEXt'); for (let i=0;i<4;i++) c=crcTable[(c^type[i])&0xFF]^(c>>>8); for(let i=0;i<buf.length;i++) c=crcTable[(c^buf[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; };
+      const chunk = new Uint8Array(12 + chunkData.length);
+      const dv = new DataView(chunk.buffer);
+      dv.setUint32(0, chunkData.length);
+      chunk[4]=0x74;chunk[5]=0x45;chunk[6]=0x58;chunk[7]=0x74; // tEXt
+      chunk.set(chunkData, 8);
+      dv.setUint32(8 + chunkData.length, crc32(chunkData));
+      // Insert before IEND (last 12 bytes)
+      const result = new Uint8Array(arr.length + chunk.length);
+      result.set(arr.subarray(0, arr.length - 12));
+      result.set(chunk, arr.length - 12);
+      result.set(arr.subarray(arr.length - 12), arr.length - 12 + chunk.length);
+      return URL.createObjectURL(new Blob([result], { type: mime }));
+    }
+  };
+
   const download = () => {
     const canvas = exportRef.current?.current;
     if (!canvas) return;
     const ext = fmt === "jpeg" ? "jpg" : "png";
     const mime = fmt === "jpeg" ? "image/jpeg" : "image/png";
     const dataUrl = fmt === "jpeg" ? canvas.toDataURL(mime, 0.95) : canvas.toDataURL(mime);
+    const blobUrl = injectMetadata(dataUrl, mime);
     const a = document.createElement("a");
     a.download = `bmd-slide${activeSlide+1}-${size.id}.${ext}`;
-    a.href = dataUrl; a.click();
+    a.href = blobUrl; a.click();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
   };
 
   const downloadAll = async () => {
@@ -738,11 +814,12 @@ function App() {
           drawCanvas(canvas, { ...shared, ...s }, size, imgEl);
           applyMosaic(canvas, s.blurStrokes);
           const dataUrl = fmt === "jpeg" ? canvas.toDataURL(mime, 0.95) : canvas.toDataURL(mime);
+          const blobUrl = injectMetadata(dataUrl, mime);
           setTimeout(() => {
             const a = document.createElement("a");
             a.download = `bmd-slide${i+1}-${size.id}.${ext}`;
-            a.href = dataUrl; a.click();
-            setTimeout(resolve, 400);
+            a.href = blobUrl; a.click();
+            setTimeout(() => { URL.revokeObjectURL(blobUrl); resolve(); }, 400);
           }, 0);
         };
         if (s.photoUrl) {
@@ -1109,10 +1186,12 @@ function App() {
               <div ref={dragAreaRef}
                 onMouseDown={onDragStart} onMouseMove={onDragMove}
                 onMouseUp={onDragEnd} onMouseLeave={onDragEnd}
+                onTouchStart={onDragStart} onTouchMove={onDragMove}
+                onTouchEnd={onDragEnd} onTouchCancel={onDragEnd}
                 style={{ boxShadow:"0 0 0 1px #ddd, 0 8px 32px rgba(0,0,0,0.15)",
                   borderRadius:5, overflow:"hidden",
                   cursor: blurMode ? "crosshair" : (photoUrl ? (isDragging ? "grabbing" : "grab") : "default"),
-                  userSelect:"none" }}>
+                  userSelect:"none", touchAction:"none" }}>
                 <CanvasPreview config={fullCfg} size={size} scale={previewScale} exportRef={exportRef}/>
               </div>
               {(photoUrl || blurMode) && (
