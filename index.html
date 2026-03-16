@@ -2,17 +2,18 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>BMD 리셀러 이미지 메이커 — 하이픽셀플러스</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <style>
-  html, body, #root { height:100%; margin:0; }
+  html, body, #root { height:100%; margin:0; overflow:hidden; }
+  html { height: -webkit-fill-available; }
+  body { font-family: Arial, sans-serif; min-height: -webkit-fill-available; }
   * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family: Arial, sans-serif; overflow:hidden; }
-  input, textarea { outline:none !important; }
-  input[type="range"] { height:8px; cursor:pointer; }
+  input, textarea { outline:none !important; font-size:16px !important; }
+  input[type="range"] { height:8px; cursor:pointer; font-size:inherit !important; }
   input[type="range"]::-webkit-slider-thumb { width:20px; height:20px; }
   ::-webkit-scrollbar { width:6px; }
   ::-webkit-scrollbar-track { background:#f0f0f0; }
@@ -944,7 +945,7 @@ function App() {
       {/* ── Slide Tab Bar ── */}
       <div style={{ background:"#fff", borderBottom:"1px solid #e0e0e0",
         padding:"0 20px", display:"flex", alignItems:"center", gap:8,
-        overflowX:"auto", flexShrink:0, height:52 }}>
+        overflowX:"auto", WebkitOverflowScrolling:"touch", flexShrink:0, height:52 }}>
         {slides.map((s, i) => (
           <div key={s.id} style={{ display:"flex", alignItems:"center", gap:2, flexShrink:0 }}>
             <button onClick={() => setActiveSlide(i)}
@@ -986,11 +987,11 @@ function App() {
         </button>
       </div>
 
-      <div style={{ display:"flex", flex:1, minHeight:0 }}>
+      <div style={{ display:"flex", flex:1, minHeight:0, overflow:"hidden" }}>
 
         {/* ── LEFT PANEL ── */}
         <div style={{ width:340, borderRight:"1px solid #e0e0e0",
-          overflowY:"auto", padding:"20px 22px", flexShrink:0, background:"#fafafa" }}>
+          overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"20px 22px", flexShrink:0, background:"#fafafa" }}>
 
           {/* Slide indicator */}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
@@ -1254,7 +1255,7 @@ function App() {
 
           {/* ── Bottom slider panel ── */}
           <div style={{ flexShrink:0, background:"#fff", borderTop:"1px solid #e0e0e0",
-            padding:"10px 24px", overflowX:"auto" }}>
+            padding:"10px 24px", overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
             <div style={{ display:"flex", gap:20, alignItems:"flex-start", minWidth:700 }}>
 
               {photoUrl && (
