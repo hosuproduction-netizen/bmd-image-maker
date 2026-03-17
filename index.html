@@ -114,9 +114,26 @@ function drawCanvas(canvas, config, size, imgEl) {
   // Split mode: photo can exceed base height → canvas grows
   const manualRatio = config.photoRatio ?? 0.60;
   const photoH      = Math.round(H * manualRatio);
-  // Minimum text area: at least 15% of base height
   const minTextH    = Math.round(H * 0.15);
-  const textH       = Math.max(minTextH, H - photoH);
+  const stripH      = config.showBranding ? Math.round(H*0.042) : 0;
+
+  // Pre-measure text to determine needed height
+  let hSize = Math.round(W*0.072 * (config.headSizeScale ?? 1));
+  ctx.font=`900 ${hSize}px 'Arial Black', Arial`;
+  let hLines = wrapText(ctx, config.headline||"", W-pad*2);
+  let bSize  = Math.round(W*0.034 * (config.bodySizeScale ?? 1));
+  ctx.font=`${bSize}px Arial`;
+  let bLines = wrapText(ctx, config.body||"", W-pad*2.2);
+  const gapBase = bLines.length ? H*0.04 : 0;
+  const gap     = gapBase * (config.textGap ?? 1);
+  let hLH = hSize*1.15;
+  let bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
+  let totalH = hLines.length * hLH;
+  let totalB = bLines.length * bLH;
+  const neededTextH = totalH + gap + totalB + stripH + H * 0.06;
+
+  // Expand text area if needed (no auto-shrink — sizes stay independent)
+  const textH       = Math.max(minTextH, H - photoH, Math.round(neededTextH));
   const canvasH     = photoH + textH;
   canvas.width = W; canvas.height = canvasH;
 
@@ -171,64 +188,42 @@ function drawCanvas(canvas, config, size, imgEl) {
     ctx.fillText(config.badge, W/2, bY+bH/2);
   }
 
-  const stripH = config.showBranding ? Math.round(H*0.042) : 0;
   const usableTextH = textH - stripH;
   const vPad = usableTextH * 0.08;
-
-  let hSize = Math.round(W*0.072 * (config.headSizeScale ?? 1));
-  ctx.font=`900 ${hSize}px 'Arial Black', Arial`;
-  let hLines = wrapText(ctx, config.headline||"", W-pad*2);
-
-  let bSize  = Math.round(W*0.034 * (config.bodySizeScale ?? 1));
-  ctx.font=`${bSize}px Arial`;
-  const bLines = wrapText(ctx, config.body||"", W-pad*2.2);
-
-  const gapBase = bLines.length ? usableTextH*0.04 : 0;
-  const gap     = gapBase * (config.textGap ?? 1);
-  let hLH = hSize*1.15;
-  let bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
-  let totalH = hLines.length * hLH;
-  let totalB = bLines.length * bLH;
-  let total  = totalH + gap + totalB;
-  const maxH = usableTextH - vPad * 2;
-
-  if (total > maxH) {
-    const ratio = maxH / total;
-    hSize  = Math.floor(hSize  * ratio);
-    bSize  = Math.floor(bSize  * ratio);
-    hLH    = hSize * 1.15;
-    bLH    = bSize * 1.55;
-    ctx.font=`900 ${hSize}px 'Arial Black', Arial`;
-    hLines = wrapText(ctx, config.headline||"", W-pad*2);
-    ctx.font=`${bSize}px Arial`;
-    totalH = hLines.length * hLH;
-    totalB = bLines.length * bLH;
-    total  = totalH + gap + totalB;
-  }
+  const total = totalH + gap + totalB;
 
   const vAlign  = config.textVAlign ?? 0;
   const freeSpace = usableTextH - total;
   const topPad  = vPad + (freeSpace - vPad*2) * (vAlign * 0.5 + 0.5);
-  const startY  = photoH + topPad;
+  const autoHeadY = photoH + topPad;
+  const autoBodyY = autoHeadY + totalH + gap;
 
   const align = config.textAlign || "center";
-  const textX = align === "left" ? pad : align === "right" ? W - pad : W/2;
+  const autoTextX = align === "left" ? pad : align === "right" ? W - pad : W/2;
+
+  // Free positioning: use stored coords or auto
+  const useFree = config.freePos;
+  const headX = useFree && config.headPos ? config.headPos.x * W : autoTextX;
+  const headY = useFree && config.headPos ? config.headPos.y * canvasH : autoHeadY;
+  const bodyX = useFree && config.bodyPos ? config.bodyPos.x * W : autoTextX;
+  const bodyStartY = useFree && config.bodyPos ? config.bodyPos.y * canvasH : autoBodyY;
+  const headAlign = align;
+  const bodyAlign = align;
 
   hLines.forEach((line,i) => {
     ctx.font=`900 ${hSize}px 'Arial Black', Arial`;
-    ctx.textAlign=align; ctx.textBaseline="top";
+    ctx.textAlign=headAlign; ctx.textBaseline="top";
     ctx.fillStyle="rgba(0,0,0,0.4)";
-    ctx.fillText(line, textX+2, startY+i*hLH+2);
+    ctx.fillText(line, headX+2, headY+i*hLH+2);
     ctx.fillStyle=accent;
-    ctx.fillText(line, textX, startY+i*hLH);
+    ctx.fillText(line, headX, headY+i*hLH);
   });
 
-  const bStartY = startY + totalH + gap;
   bLines.forEach((line,i) => {
     ctx.font=`${bSize}px Arial`;
     ctx.fillStyle="rgba(255,255,255,0.82)";
-    ctx.textAlign=align; ctx.textBaseline="top";
-    ctx.fillText(line, textX, bStartY+i*bLH);
+    ctx.textAlign=bodyAlign; ctx.textBaseline="top";
+    ctx.fillText(line, bodyX, bodyStartY+i*bLH);
   });
 
   if (config.showBranding) {
@@ -330,31 +325,37 @@ function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
   let curY = topOffset;
 
   const align = config.textAlign || "center";
-  const oTextX = align === "left" ? textPadX : align === "right" ? W - textPadX : W / 2;
+  const autoOTextX = align === "left" ? textPadX : align === "right" ? W - textPadX : W / 2;
 
-  if (subText) {
+  const useFree = config.freePos;
+  const oHeadX = useFree && config.headPos ? config.headPos.x * W : autoOTextX;
+  const oHeadY = useFree && config.headPos ? config.headPos.y * H : curY + (subText ? subSize * 1.6 : 0);
+  const oBodyX = useFree && config.bodyPos ? config.bodyPos.x * W : autoOTextX;
+  const oBodyY = useFree && config.bodyPos ? config.bodyPos.y * H : curY + (subText ? subSize * 1.6 : 0) + totalH + gap;
+  const oAlign = align;
+
+  if (subText && !useFree) {
     ctx.font = `bold ${subSize}px Arial`;
     ctx.textAlign = align; ctx.textBaseline = "top";
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(subText, oTextX, curY);
+    ctx.fillText(subText, autoOTextX, curY);
     curY += subSize * 1.6;
   }
 
   hLines.forEach((line, i) => {
     ctx.font = `900 ${hSize}px 'Arial Black', Arial`;
-    ctx.textAlign = align; ctx.textBaseline = "top";
+    ctx.textAlign = oAlign; ctx.textBaseline = "top";
     ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillText(line, oTextX + 2, curY + i * hLH + 2);
+    ctx.fillText(line, oHeadX + 2, oHeadY + i * hLH + 2);
     ctx.fillStyle = accent;
-    ctx.fillText(line, oTextX, curY + i * hLH);
+    ctx.fillText(line, oHeadX, oHeadY + i * hLH);
   });
-  curY += totalH + gap;
 
   bLines.forEach((line, i) => {
     ctx.font = `${bSize}px Arial`;
     ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.textAlign = align; ctx.textBaseline = "top";
-    ctx.fillText(line, oTextX, curY + i * bLH);
+    ctx.textAlign = oAlign; ctx.textBaseline = "top";
+    ctx.fillText(line, oBodyX, oBodyY + i * bLH);
   });
 
   const fixedPad = W * 0.08;
@@ -474,6 +475,7 @@ function App() {
     badge:     "",
     imgScale:  1, imgOffsetX: 0, imgOffsetY: 0,
     blurStrokes: [],
+    headPos: null, bodyPos: null, // {x:0-1, y:0-1} for free positioning
     ...overrides,
   });
 
@@ -494,7 +496,7 @@ function App() {
     company: savedCompany || "하이픽셀플러스", headSizeScale: 1, bodySizeScale: 1,
     textGap: 1, textVAlign: 0, bodyLineHeight: 1,
     layout: "split", overlayStart: 0.35, textPadX: 0.08,
-    showBadge: false, textAlign: "center",
+    showBadge: false, textAlign: "center", freePos: false,
   });
 
   // Save company name to localStorage
@@ -574,14 +576,21 @@ function App() {
     const rect = dragAreaRef.current?.getBoundingClientRect();
     if (!rect) return null;
     const p = getPointer(e);
-    const x = (p.clientX - rect.left) / rect.width * size.w;
-    const y = (p.clientY - rect.top) / rect.height * size.h;
-    return { x, y };
+    const canvasEl = exportRef.current?.current;
+    const cW = canvasEl ? canvasEl.width : size.w;
+    const cH = canvasEl ? canvasEl.height : size.h;
+    const x = (p.clientX - rect.left) / rect.width * cW;
+    const y = (p.clientY - rect.top) / rect.height * cH;
+    return { x, y, cW, cH };
   };
+
+  const textDragRef = useRef(null); // {target:"head"|"body", startX, startY, origX, origY}
 
   const onDragStart = (e) => {
     if (e.touches) e.preventDefault();
     const p = getPointer(e);
+
+    // Blur mode
     if (blurMode) {
       const pt = toCanvasCoords(e);
       if (!pt) return;
@@ -591,6 +600,29 @@ function App() {
       updateSlide({ blurStrokes: [...(slide.blurStrokes||[]), blurStrokeRef.current] });
       return;
     }
+
+    // Free position mode: drag text blocks
+    if (cfg.freePos) {
+      const pt = toCanvasCoords(e);
+      if (!pt) return;
+      // Determine which block: top half = head, bottom half = body
+      const headY = slide.headPos ? slide.headPos.y * pt.cH : pt.cH * 0.5;
+      const bodyY = slide.bodyPos ? slide.bodyPos.y * pt.cH : pt.cH * 0.7;
+      const distHead = Math.abs(pt.y - headY);
+      const distBody = Math.abs(pt.y - bodyY);
+      const target = distHead <= distBody ? "head" : "body";
+      const pos = target === "head" ? slide.headPos : slide.bodyPos;
+      setIsDragging(true);
+      textDragRef.current = {
+        target,
+        startX: p.clientX, startY: p.clientY,
+        origX: pos ? pos.x : 0.5,
+        origY: pos ? pos.y : (target === "head" ? 0.5 : 0.7),
+      };
+      return;
+    }
+
+    // Normal image drag
     if (!photoUrl) return;
     setIsDragging(true);
     dragState.current = {
@@ -603,6 +635,8 @@ function App() {
 
   const onDragMove = (e) => {
     if (e.touches) e.preventDefault();
+
+    // Blur mode
     if (blurMode && isDragging && blurStrokeRef.current) {
       const pt = toCanvasCoords(e);
       if (!pt) return;
@@ -613,6 +647,25 @@ function App() {
       updateSlide({ blurStrokes: strokes });
       return;
     }
+
+    // Free position text drag
+    if (textDragRef.current && isDragging) {
+      const { target, startX, startY, origX, origY } = textDragRef.current;
+      const rect = dragAreaRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const p = getPointer(e);
+      const dx = (p.clientX - startX) / rect.width;
+      const dy = (p.clientY - startY) / rect.height;
+      const newPos = {
+        x: Math.max(0, Math.min(1, origX + dx)),
+        y: Math.max(0, Math.min(1, origY + dy)),
+      };
+      if (target === "head") updateSlide({ headPos: newPos });
+      else updateSlide({ bodyPos: newPos });
+      return;
+    }
+
+    // Normal image drag
     if (!dragState.current) return;
     const { startX, startY, startOX, startOY } = dragState.current;
     const rect = dragAreaRef.current?.getBoundingClientRect();
@@ -630,6 +683,7 @@ function App() {
   const onDragEnd = () => {
     dragState.current = null;
     blurStrokeRef.current = null;
+    textDragRef.current = null;
     setIsDragging(false);
   };
   const [urlInput,   setUrlInput]   = useState("");
@@ -719,7 +773,7 @@ function App() {
     // Only track non-text changes (sliders, toggles, colors)
     const nonTextKeys = ["photoRatio","showBranding","accentColor","imgScale",
       "imgOffsetX","imgOffsetY","headSizeScale","bodySizeScale",
-      "textGap","textVAlign","bodyLineHeight","layout","overlayStart","textPadX","showBadge","textAlign"];
+      "textGap","textVAlign","bodyLineHeight","layout","overlayStart","textPadX","showBadge","textAlign","freePos"];
     const changed = nonTextKeys.some(k => prev[k] !== curr[k]);
     if (changed) {
       historyRef.current.push(prev);
@@ -1091,7 +1145,7 @@ function App() {
 
           {/* ✏️ 텍스트 */}
           {sectionLabel("✏️ 텍스트")}
-          {inp("큰 제목", "headline", "SSD? 이제 안녕. 👋")}
+          {inp("큰 제목 (엔터로 줄바꿈)", "headline", "SSD? 이제 안녕. 👋", true)}
           {inp("본문 (엔터로 줄바꿈)", "body", "설명 텍스트...", true)}
 
           {/* 띠 문구 / 작은 제목 체크박스 */}
@@ -1200,7 +1254,7 @@ function App() {
               ))}
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <button onClick={() => setBlurMode(!blurMode)}
+              <button onClick={() => { setBlurMode(!blurMode); if (!blurMode) setCfg({...cfg, freePos:false}); }}
                 style={{ padding:"8px 16px", borderRadius:6, fontSize:13, fontWeight:700,
                   cursor:"pointer", border: blurMode ? "2px solid #e05555" : "2px solid #ccc",
                   background: blurMode ? "#fff0f0" : "#fff",
@@ -1224,6 +1278,28 @@ function App() {
                   </button>
                 )}
               </>)}
+              <button onClick={() => {
+                  if (!cfg.freePos) {
+                    // Turning on: initialize positions if not set
+                    if (!slide.headPos) updateSlide({ headPos: {x:0.5, y:0.5} });
+                    if (!slide.bodyPos) updateSlide({ bodyPos: {x:0.5, y:0.7} });
+                  }
+                  setCfg({...cfg, freePos: !cfg.freePos});
+                  if (blurMode) setBlurMode(false);
+                }}
+                style={{ padding:"8px 16px", borderRadius:6, fontSize:13, fontWeight:700,
+                  cursor:"pointer", border: cfg.freePos ? "2px solid #3b82f6" : "2px solid #ccc",
+                  background: cfg.freePos ? "#eff6ff" : "#fff",
+                  color: cfg.freePos ? "#3b82f6" : "#888" }}>
+                {cfg.freePos ? "🔵 자유 배치 ON" : "✋ 자유 배치"}
+              </button>
+              {cfg.freePos && (
+                <button onClick={() => updateSlide({ headPos: null, bodyPos: null })}
+                  style={{ padding:"6px 12px", borderRadius:5, fontSize:12, fontWeight:600,
+                    cursor:"pointer", border:"1px solid #ddd", background:"#fff", color:"#888" }}>
+                  위치 초기화
+                </button>
+              )}
               <div style={{ display:"flex", gap:2, background:"#e0e0e0", borderRadius:6, padding:3 }}>
                 {[{id:"jpeg",label:"JPEG"},{id:"png",label:"PNG"}].map(f => (
                   <button key={f.id} onClick={() => setFmt(f.id)}
@@ -1263,15 +1339,15 @@ function App() {
                 onTouchEnd={onDragEnd} onTouchCancel={onDragEnd}
                 style={{ boxShadow:"0 0 0 1px #ddd, 0 8px 32px rgba(0,0,0,0.15)",
                   borderRadius:5, overflow:"hidden",
-                  cursor: blurMode ? "crosshair" : (photoUrl ? (isDragging ? "grabbing" : "grab") : "default"),
+                  cursor: blurMode ? "crosshair" : cfg.freePos ? "move" : (photoUrl ? (isDragging ? "grabbing" : "grab") : "default"),
                   userSelect:"none", touchAction:"none" }}>
                 <CanvasPreview config={fullCfg} size={size} scale={previewScale} exportRef={exportRef}/>
               </div>
-              {(photoUrl || blurMode) && (
+              {(photoUrl || blurMode || cfg.freePos) && (
                 <div style={{ position:"absolute", bottom:-24, left:0, right:0,
                   display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:12, color: blurMode ? "#e05555" : "#999", pointerEvents:"none" }}>
-                  <span>{blurMode ? "🖌️ 드래그로 흐리게 칠하기" : "🖱️ 드래그로 위치 조정"}</span>
+                  fontSize:12, color: blurMode ? "#e05555" : cfg.freePos ? "#3b82f6" : "#999", pointerEvents:"none" }}>
+                  <span>{blurMode ? "🖌️ 드래그로 흐리게 칠하기" : cfg.freePos ? "✋ 제목/본문을 드래그로 이동" : "🖱️ 드래그로 위치 조정"}</span>
                 </div>
               )}
             </div>
