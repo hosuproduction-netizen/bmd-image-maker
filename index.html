@@ -224,7 +224,7 @@ function drawCanvas(canvas, config, size, imgEl) {
 
   bLines.forEach((line,i) => {
     ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.fillStyle="rgba(255,255,255,0.82)";
+    ctx.fillStyle="#ffffff";
     ctx.textAlign=bodyAlign; ctx.textBaseline="top";
     ctx.fillText(line, bodyX, bodyStartY+i*bLH);
   });
@@ -356,7 +356,7 @@ function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
 
   bLines.forEach((line, i) => {
     ctx.font = `${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillStyle = "#ffffff";
     ctx.textAlign = oAlign; ctx.textBaseline = "top";
     ctx.fillText(line, oBodyX, oBodyY + i * bLH);
   });
@@ -1308,7 +1308,7 @@ function MainApp({ resellerName, handleLogout }) {
           {/* 🎨 스타일 */}
           {sectionLabel("🎨 스타일")}
           <div style={{ fontSize:13, color:"#888", marginBottom:8 }}>강조 색상 (큰 제목)</div>
-          <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap", position:"relative" }}>
             {ACCENTS.map(a => (
               <button key={a.id} onClick={() => setCfg({...cfg, accentColor:a.hex})} title={a.label}
                 style={{ width:36, height:36, borderRadius:"50%", background:a.hex, cursor:"pointer",
@@ -1332,14 +1332,14 @@ function MainApp({ resellerName, handleLogout }) {
                     alignItems:"center", justifyContent:"center", padding:0 }}>×</button>
               </div>
             ))}
-            <button onClick={() => { const el = colorPickerRef.current; if(el) { el.style.display="block"; el.click(); } }}
+            <button onClick={() => { colorPickerRef.current?.click(); }}
               title="커스텀 색상 추가"
               style={{ width:36, height:36, borderRadius:"50%", cursor:"pointer",
                 border:"2px dashed #bbb", background:"transparent",
                 display:"flex", alignItems:"center", justifyContent:"center",
                 fontSize:20, color:"#aaa", lineHeight:1 }}>+</button>
             <input ref={colorPickerRef} type="color" value={cfg.accentColor}
-              style={{ position:"fixed", top:"-100px", left:"-100px", opacity:0, width:1, height:1 }}
+              style={{ position:"absolute", left:0, bottom:-10, opacity:0, width:36, height:1, pointerEvents:"none" }}
               onChange={e => {
                 setCfg({...cfg, accentColor: e.target.value});
               }}
