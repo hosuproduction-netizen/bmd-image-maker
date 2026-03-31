@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -30,1777 +31,1845 @@
 const { useState, useRef, useEffect, useCallback } = React;
 
 const SIZES = [
-  { id: "card",   label: "카드 4:5",    w: 1080, h: 1350  },
+{ id: “card”,   label: “카드 4:5”,    w: 1080, h: 1350  },
 ];
 
 const ACCENTS = [
-  { id: "white",  hex: "#ffffff", label: "화이트" },
-  { id: "yellow", hex: "#f5c518", label: "골드"   },
-  { id: "cyan",   hex: "#00d4ff", label: "시안"   },
-  { id: "red",    hex: "#ff3b3b", label: "레드"   },
+{ id: “white”,  hex: “#ffffff”, label: “화이트” },
+{ id: “yellow”, hex: “#f5c518”, label: “골드”   },
+{ id: “cyan”,   hex: “#00d4ff”, label: “시안”   },
+{ id: “red”,    hex: “#ff3b3b”, label: “레드”   },
 ];
 
 // ─── helpers ────────────────────────────────────────────────────
 function wrapText(ctx, text, maxW) {
-  const paragraphs = text.split("\n");
-  const lines = [];
-  for (const para of paragraphs) {
-    if (!para.trim()) { lines.push(""); continue; }
-    const words = para.split(" ");
-    let cur = "";
-    for (const w of words) {
-      const test = cur ? cur + " " + w : w;
-      if (ctx.measureText(test).width > maxW && cur) { lines.push(cur); cur = w; }
-      else { cur = test; }
-    }
-    if (cur) lines.push(cur);
-  }
-  return lines;
+const paragraphs = text.split(”\n”);
+const lines = [];
+for (const para of paragraphs) {
+if (!para.trim()) { lines.push(””); continue; }
+const words = para.split(” “);
+let cur = “”;
+for (const w of words) {
+const test = cur ? cur + “ “ + w : w;
+if (ctx.measureText(test).width > maxW && cur) { lines.push(cur); cur = w; }
+else { cur = test; }
+}
+if (cur) lines.push(cur);
+}
+return lines;
 }
 
 function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
-  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
-  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
-  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
-  ctx.closePath();
+ctx.beginPath();
+ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+ctx.closePath();
 }
 
 /**
- * Calculate the minimum photo ratio so text fits with comfortable padding.
- * Returns a value between minRatio and maxRatio.
- */
-function calcAutoPhotoRatio(W, H, headline, body, manualRatio, showBranding, textPadX) {
-  const tmp = document.createElement("canvas");
+
+- Calculate the minimum photo ratio so text fits with comfortable padding.
+- Returns a value between minRatio and maxRatio.
+  */
+  function calcAutoPhotoRatio(W, H, headline, body, manualRatio, showBranding, textPadX) {
+  const tmp = document.createElement(“canvas”);
   tmp.width = W; tmp.height = H;
-  const ctx = tmp.getContext("2d");
+  const ctx = tmp.getContext(“2d”);
   const pad = W * (textPadX ?? 0.08);
 
-  const hSize = Math.round(W * 0.072);
-  ctx.font = `900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-  const hLines = wrapText(ctx, headline || "", W - pad * 2);
+const hSize = Math.round(W * 0.072);
+ctx.font = `900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+const hLines = wrapText(ctx, headline || “”, W - pad * 2);
 
-  const bSize = Math.round(W * 0.034);
-  ctx.font = `${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-  const bLines = wrapText(ctx, body || "", W - pad * 2.2);
+const bSize = Math.round(W * 0.034);
+ctx.font = `${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+const bLines = wrapText(ctx, body || “”, W - pad * 2.2);
 
-  const totalH = hLines.length * hSize * 1.18;
-  const totalB = bLines.length * bSize * 1.65;
-  const gap    = bLines.length ? H * 0.055 : 0;
-  const stripH = showBranding ? H * 0.042 : 0;
+const totalH = hLines.length * hSize * 1.18;
+const totalB = bLines.length * bSize * 1.65;
+const gap    = bLines.length ? H * 0.055 : 0;
+const stripH = showBranding ? H * 0.042 : 0;
 
-  // Desired text area = content + vertical padding (top + bottom each 8%)
-  const needed = totalH + gap + totalB + stripH + H * 0.16;
-  const autoRatio = Math.max(0.20, Math.min(0.98, 1 - needed / H));
+// Desired text area = content + vertical padding (top + bottom each 8%)
+const needed = totalH + gap + totalB + stripH + H * 0.16;
+const autoRatio = Math.max(0.20, Math.min(0.98, 1 - needed / H));
 
-  // Use whichever is smaller: manual preference or auto-needed
-  return Math.min(manualRatio, autoRatio);
+// Use whichever is smaller: manual preference or auto-needed
+return Math.min(manualRatio, autoRatio);
 }
 
 // ─── Canvas draw ────────────────────────────────────────────────
 function drawCanvas(canvas, config, size, imgEl) {
-  const ctx = canvas.getContext("2d");
-  const W = size.w, H = size.h;
+const ctx = canvas.getContext(“2d”);
+const W = size.w, H = size.h;
 
-  const accent      = config.accentColor || "#ffffff";
-  const pad         = W * (config.textPadX ?? 0.08);
-  const layout      = config.layout || "split"; // "split" or "overlay"
+const accent      = config.accentColor || “#ffffff”;
+const pad         = W * (config.textPadX ?? 0.08);
+const layout      = config.layout || “split”; // “split” or “overlay”
 
-  if (layout === "overlay") {
-    canvas.width = W; canvas.height = H;
-    return drawOverlay(ctx, W, H, config, imgEl, accent, pad);
-  }
+if (layout === “overlay”) {
+canvas.width = W; canvas.height = H;
+return drawOverlay(ctx, W, H, config, imgEl, accent, pad);
+}
 
-  // Split mode: canvas only grows when photoRatio > 1.0
-  const manualRatio = config.photoRatio ?? 0.60;
-  const photoH      = Math.round(H * manualRatio);
-  const minTextH    = Math.round(H * 0.15);
-  const textH       = Math.max(minTextH, H - photoH);
-  const canvasH     = photoH + textH;
-  canvas.width = W; canvas.height = canvasH;
-  const stripH      = config.showBranding ? Math.round(H*0.042) : 0;
+// Split mode: canvas only grows when photoRatio > 1.0
+const manualRatio = config.photoRatio ?? 0.60;
+const photoH      = Math.round(H * manualRatio);
+const minTextH    = Math.round(H * 0.15);
+const textH       = Math.max(minTextH, H - photoH);
+const canvasH     = photoH + textH;
+canvas.width = W; canvas.height = canvasH;
+const stripH      = config.showBranding ? Math.round(H*0.042) : 0;
 
-  // Measure text
-  let hSize = Math.round(W*0.072 * (config.headSizeScale ?? 1));
-  ctx.font=`900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-  let hLines = wrapText(ctx, config.headline||"", W-pad*2);
-  let bSize  = Math.round(W*0.034 * (config.bodySizeScale ?? 1));
-  ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-  let bLines = wrapText(ctx, config.body||"", W-pad*2.2);
-  const gapBase = bLines.length ? (textH - stripH)*0.04 : 0;
-  const gap     = gapBase * (config.textGap ?? 1);
-  let hLH = hSize*1.15;
-  let bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
-  let totalH = hLines.length * hLH;
-  let totalB = bLines.length * bLH;
-  let total  = totalH + gap + totalB;
-  const usableTextH = textH - stripH;
-  const maxTextSpace = usableTextH * 0.88;
+// Measure text
+let hSize = Math.round(W*0.072 * (config.headSizeScale ?? 1));
+ctx.font=`900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+let hLines = wrapText(ctx, config.headline||””, W-pad*2);
+let bSize  = Math.round(W*0.034 * (config.bodySizeScale ?? 1));
+ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+let bLines = wrapText(ctx, config.body||””, W-pad*2.2);
+const gapBase = bLines.length ? (textH - stripH)*0.04 : 0;
+const gap     = gapBase * (config.textGap ?? 1);
+let hLH = hSize*1.15;
+let bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
+let totalH = hLines.length * hLH;
+let totalB = bLines.length * bLH;
+let total  = totalH + gap + totalB;
+const usableTextH = textH - stripH;
+const maxTextSpace = usableTextH * 0.88;
 
-  // Auto-shrink if text overflows (proportional)
-  if (total > maxTextSpace && total > 0) {
-    const ratio = maxTextSpace / total;
-    hSize  = Math.max(12, Math.floor(hSize * ratio));
-    bSize  = Math.max(10, Math.floor(bSize * ratio));
-    hLH = hSize * 1.15;
-    bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
-    ctx.font=`900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    hLines = wrapText(ctx, config.headline||"", W-pad*2);
-    ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    bLines = wrapText(ctx, config.body||"", W-pad*2.2);
-    totalH = hLines.length * hLH;
-    totalB = bLines.length * bLH;
-    total  = totalH + gap + totalB;
-  }
+// Auto-shrink if text overflows (proportional)
+if (total > maxTextSpace && total > 0) {
+const ratio = maxTextSpace / total;
+hSize  = Math.max(12, Math.floor(hSize * ratio));
+bSize  = Math.max(10, Math.floor(bSize * ratio));
+hLH = hSize * 1.15;
+bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
+ctx.font=`900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+hLines = wrapText(ctx, config.headline||””, W-pad*2);
+ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+bLines = wrapText(ctx, config.body||””, W-pad*2.2);
+totalH = hLines.length * hLH;
+totalB = bLines.length * bLH;
+total  = totalH + gap + totalB;
+}
 
-  // ── Photo area
-  if (imgEl) {
-    const iR = imgEl.width / imgEl.height, aR = W / photoH;
-    let baseW, baseH;
-    if (iR > aR) { baseH = photoH; baseW = photoH * iR; }
-    else          { baseW = W;     baseH = W / iR; }
+// ── Photo area
+if (imgEl) {
+const iR = imgEl.width / imgEl.height, aR = W / photoH;
+let baseW, baseH;
+if (iR > aR) { baseH = photoH; baseW = photoH * iR; }
+else          { baseW = W;     baseH = W / iR; }
 
-    const scale  = config.imgScale  ?? 1;
-    const ox     = config.imgOffsetX ?? 0;
-    const oy     = config.imgOffsetY ?? 0;
+```
+const scale  = config.imgScale  ?? 1;
+const ox     = config.imgOffsetX ?? 0;
+const oy     = config.imgOffsetY ?? 0;
 
-    const drawW = baseW * scale;
-    const drawH = baseH * scale;
-    const drawX = (W - drawW) / 2 + ox * (drawW - W) / 2;
-    const drawY = (photoH - drawH) / 2 + oy * (drawH - photoH) / 2;
+const drawW = baseW * scale;
+const drawH = baseH * scale;
+const drawX = (W - drawW) / 2 + ox * (drawW - W) / 2;
+const drawY = (photoH - drawH) / 2 + oy * (drawH - photoH) / 2;
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, W, photoH);
-    ctx.clip();
-    ctx.drawImage(imgEl, drawX, drawY, drawW, drawH);
-    ctx.restore();
-    const fade = ctx.createLinearGradient(0, photoH*0.55, 0, photoH);
-    fade.addColorStop(0,"rgba(0,0,0,0)"); fade.addColorStop(1,"rgba(0,0,0,0.55)");
-    ctx.fillStyle=fade; ctx.fillRect(0,0,W,photoH);
-  } else {
-    ctx.fillStyle="#181818"; ctx.fillRect(0,0,W,photoH);
-    ctx.fillStyle="#303030";
-    ctx.font=`${Math.round(W*0.028)}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillText("📷  제품 사진을 업로드하세요", W/2, photoH/2);
-  }
+ctx.save();
+ctx.beginPath();
+ctx.rect(0, 0, W, photoH);
+ctx.clip();
+ctx.drawImage(imgEl, drawX, drawY, drawW, drawH);
+ctx.restore();
+const fade = ctx.createLinearGradient(0, photoH*0.55, 0, photoH);
+fade.addColorStop(0,"rgba(0,0,0,0)"); fade.addColorStop(1,"rgba(0,0,0,0.55)");
+ctx.fillStyle=fade; ctx.fillRect(0,0,W,photoH);
+```
 
-  // ── Text background
-  ctx.fillStyle="#000"; ctx.fillRect(0,photoH,W,textH);
-  ctx.fillStyle=accent+"50"; ctx.fillRect(0,photoH,W,2);
+} else {
+ctx.fillStyle=”#181818”; ctx.fillRect(0,0,W,photoH);
+ctx.fillStyle=”#303030”;
+ctx.font=`${Math.round(W*0.028)}px Pretendard, 'Noto Sans KR', sans-serif`;
+ctx.textAlign=“center”; ctx.textBaseline=“middle”;
+ctx.fillText(“📷  제품 사진을 업로드하세요”, W/2, photoH/2);
+}
 
-  // ── Badge
-  if (config.showBadge && config.badge?.trim()) {
-    const bFont = Math.round(W*0.022);
-    ctx.font=`bold ${bFont}px Pretendard, 'Noto Sans KR', sans-serif`;
-    const bW=ctx.measureText(config.badge).width+30, bH=bFont+18;
-    const bX=W/2-bW/2, bY=photoH-bH-Math.round(H*0.022);
-    ctx.fillStyle="rgba(0,0,0,0.82)";
-    roundRect(ctx,bX,bY,bW,bH,3); ctx.fill();
-    ctx.strokeStyle="#ffffff90"; ctx.lineWidth=1.5;
-    roundRect(ctx,bX,bY,bW,bH,3); ctx.stroke();
-    ctx.fillStyle="#ffffff"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillText(config.badge, W/2, bY+bH/2);
-  }
+// ── Text background
+ctx.fillStyle=”#000”; ctx.fillRect(0,photoH,W,textH);
+ctx.fillStyle=accent+“50”; ctx.fillRect(0,photoH,W,2);
 
-  const vPad = usableTextH * 0.08;
+// ── Badge
+if (config.showBadge && config.badge?.trim()) {
+const bFont = Math.round(W*0.022);
+ctx.font=`bold ${bFont}px Pretendard, 'Noto Sans KR', sans-serif`;
+const bW=ctx.measureText(config.badge).width+30, bH=bFont+18;
+const bX=W/2-bW/2, bY=photoH-bH-Math.round(H*0.022);
+ctx.fillStyle=“rgba(0,0,0,0.82)”;
+roundRect(ctx,bX,bY,bW,bH,3); ctx.fill();
+ctx.strokeStyle=”#ffffff90”; ctx.lineWidth=1.5;
+roundRect(ctx,bX,bY,bW,bH,3); ctx.stroke();
+ctx.fillStyle=”#ffffff”; ctx.textAlign=“center”; ctx.textBaseline=“middle”;
+ctx.fillText(config.badge, W/2, bY+bH/2);
+}
 
-  const vAlign  = config.textVAlign ?? 0;
-  const freeSpace = usableTextH - total;
-  const topPad  = vPad + (freeSpace - vPad*2) * (vAlign * 0.5 + 0.5);
-  const autoHeadY = photoH + topPad;
-  const autoBodyY = autoHeadY + totalH + gap;
+const vPad = usableTextH * 0.08;
 
-  const align = config.textAlign || "center";
-  const autoTextX = align === "left" ? pad : align === "right" ? W - pad : W/2;
+const vAlign  = config.textVAlign ?? 0;
+const freeSpace = usableTextH - total;
+const topPad  = vPad + (freeSpace - vPad*2) * (vAlign * 0.5 + 0.5);
+const autoHeadY = photoH + topPad;
+const autoBodyY = autoHeadY + totalH + gap;
 
-  // Free positioning: use stored coords or auto
-  const useFree = config.freePos;
-  const headX = useFree && config.headPos ? config.headPos.x * W : autoTextX;
-  const headY = useFree && config.headPos ? config.headPos.y * canvasH : autoHeadY;
-  const bodyX = useFree && config.bodyPos ? config.bodyPos.x * W : autoTextX;
-  const bodyStartY = useFree && config.bodyPos ? config.bodyPos.y * canvasH : autoBodyY;
-  const headAlign = align;
-  const bodyAlign = align;
+const align = config.textAlign || “center”;
+const autoTextX = align === “left” ? pad : align === “right” ? W - pad : W/2;
 
-  hLines.forEach((line,i) => {
-    ctx.font=`900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.textAlign=headAlign; ctx.textBaseline="top";
-    ctx.fillStyle="rgba(0,0,0,0.4)";
-    ctx.fillText(line, headX+2, headY+i*hLH+2);
-    ctx.fillStyle=accent;
-    ctx.fillText(line, headX, headY+i*hLH);
-  });
+// Free positioning: use stored coords or auto
+const useFree = config.freePos;
+const headX = useFree && config.headPos ? config.headPos.x * W : autoTextX;
+const headY = useFree && config.headPos ? config.headPos.y * canvasH : autoHeadY;
+const bodyX = useFree && config.bodyPos ? config.bodyPos.x * W : autoTextX;
+const bodyStartY = useFree && config.bodyPos ? config.bodyPos.y * canvasH : autoBodyY;
+const headAlign = align;
+const bodyAlign = align;
 
-  bLines.forEach((line,i) => {
-    ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.fillStyle="#ffffff";
-    ctx.textAlign=bodyAlign; ctx.textBaseline="top";
-    ctx.fillText(line, bodyX, bodyStartY+i*bLH);
-  });
+hLines.forEach((line,i) => {
+ctx.font=`900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+ctx.textAlign=headAlign; ctx.textBaseline=“top”;
+ctx.fillStyle=“rgba(0,0,0,0.4)”;
+ctx.fillText(line, headX+2, headY+i*hLH+2);
+ctx.fillStyle=accent;
+ctx.fillText(line, headX, headY+i*hLH);
+});
 
-  if (config.showBranding) {
-    const fixedPad = W * 0.08;
-    ctx.fillStyle="#0f0f0f"; ctx.fillRect(0,canvasH-stripH,W,stripH);
-    ctx.fillStyle=accent+"30"; ctx.fillRect(0,canvasH-stripH,W,1);
-    const sf=Math.round(W*0.018);
-    ctx.font=`bold ${sf}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.textAlign="left"; ctx.textBaseline="middle";
-    ctx.fillStyle="#ffffff";
-    ctx.fillText(config.company||"하이픽셀플러스", fixedPad*0.6, canvasH-stripH/2);
-    ctx.textAlign="right"; ctx.fillStyle="#444";
-    ctx.fillText("Blackmagic Design Authorized Reseller", W-fixedPad*0.6, canvasH-stripH/2);
-  }
+bLines.forEach((line,i) => {
+ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+ctx.fillStyle=”#ffffff”;
+ctx.textAlign=bodyAlign; ctx.textBaseline=“top”;
+ctx.fillText(line, bodyX, bodyStartY+i*bLH);
+});
 
-  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+if (config.showBranding) {
+const fixedPad = W * 0.08;
+ctx.fillStyle=”#0f0f0f”; ctx.fillRect(0,canvasH-stripH,W,stripH);
+ctx.fillStyle=accent+“30”; ctx.fillRect(0,canvasH-stripH,W,1);
+const sf=Math.round(W*0.018);
+ctx.font=`bold ${sf}px Pretendard, 'Noto Sans KR', sans-serif`;
+ctx.textAlign=“left”; ctx.textBaseline=“middle”;
+ctx.fillStyle=”#ffffff”;
+ctx.fillText(config.company||“하이픽셀플러스”, fixedPad*0.6, canvasH-stripH/2);
+ctx.textAlign=“right”; ctx.fillStyle=”#444”;
+ctx.fillText(“Blackmagic Design Authorized Reseller”, W-fixedPad*0.6, canvasH-stripH/2);
+}
+
+ctx.textAlign=“left”; ctx.textBaseline=“alphabetic”;
 }
 
 // ─── Overlay mode draw ──────────────────────────────────────────
 function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
-  const stripH = config.showBranding ? Math.round(H*0.042) : 0;
-  const gradStart = config.overlayStart ?? 0.35;
-  const textPadX = W * (config.textPadX ?? 0.08); // horizontal padding
+const stripH = config.showBranding ? Math.round(H*0.042) : 0;
+const gradStart = config.overlayStart ?? 0.35;
+const textPadX = W * (config.textPadX ?? 0.08); // horizontal padding
 
-  // ── Full-bleed image
-  if (imgEl) {
-    const iR = imgEl.width / imgEl.height, aR = W / H;
-    let baseW, baseH;
-    if (iR > aR) { baseH = H; baseW = H * iR; }
-    else          { baseW = W; baseH = W / iR; }
+// ── Full-bleed image
+if (imgEl) {
+const iR = imgEl.width / imgEl.height, aR = W / H;
+let baseW, baseH;
+if (iR > aR) { baseH = H; baseW = H * iR; }
+else          { baseW = W; baseH = W / iR; }
 
-    const scale  = config.imgScale  ?? 1;
-    const ox     = config.imgOffsetX ?? 0;
-    const oy     = config.imgOffsetY ?? 0;
-    const drawW = baseW * scale;
-    const drawH = baseH * scale;
-    const drawX = (W - drawW) / 2 + ox * (drawW - W) / 2;
-    const drawY = (H - drawH) / 2 + oy * (drawH - H) / 2;
+```
+const scale  = config.imgScale  ?? 1;
+const ox     = config.imgOffsetX ?? 0;
+const oy     = config.imgOffsetY ?? 0;
+const drawW = baseW * scale;
+const drawH = baseH * scale;
+const drawX = (W - drawW) / 2 + ox * (drawW - W) / 2;
+const drawY = (H - drawH) / 2 + oy * (drawH - H) / 2;
 
-    ctx.drawImage(imgEl, drawX, drawY, drawW, drawH);
-  } else {
-    ctx.fillStyle="#181818"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#303030";
-    ctx.font=`${Math.round(W*0.028)}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillText("📷  제품 사진을 업로드하세요", W/2, H*0.35);
-  }
+ctx.drawImage(imgEl, drawX, drawY, drawW, drawH);
+```
 
-  // ── Bottom gradient overlay (visual only, does NOT affect text position)
-  const gradY = Math.round(H * gradStart);
-  const fade = ctx.createLinearGradient(0, gradY, 0, H);
-  fade.addColorStop(0, "rgba(0,0,0,0)");
-  fade.addColorStop(0.5, "rgba(0,0,0,0.6)");
-  fade.addColorStop(1, "rgba(0,0,0,0.92)");
-  ctx.fillStyle = fade;
-  ctx.fillRect(0, gradY, W, H - gradY);
+} else {
+ctx.fillStyle=”#181818”; ctx.fillRect(0,0,W,H);
+ctx.fillStyle=”#303030”;
+ctx.font=`${Math.round(W*0.028)}px Pretendard, 'Noto Sans KR', sans-serif`;
+ctx.textAlign=“center”; ctx.textBaseline=“middle”;
+ctx.fillText(“📷  제품 사진을 업로드하세요”, W/2, H*0.35);
+}
 
-  // ── Measure text (independent of gradient position)
-  let hSize = Math.round(W * 0.08 * (config.headSizeScale ?? 1));
-  ctx.font = `900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-  let hLines = wrapText(ctx, config.headline || "", W - textPadX * 2);
+// ── Bottom gradient overlay (visual only, does NOT affect text position)
+const gradY = Math.round(H * gradStart);
+const fade = ctx.createLinearGradient(0, gradY, 0, H);
+fade.addColorStop(0, “rgba(0,0,0,0)”);
+fade.addColorStop(0.5, “rgba(0,0,0,0.6)”);
+fade.addColorStop(1, “rgba(0,0,0,0.92)”);
+ctx.fillStyle = fade;
+ctx.fillRect(0, gradY, W, H - gradY);
 
-  let bSize = Math.round(W * 0.034 * (config.bodySizeScale ?? 1));
-  ctx.font = `${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-  const bLines = wrapText(ctx, config.body || "", W - textPadX * 2);
+// ── Measure text (independent of gradient position)
+let hSize = Math.round(W * 0.08 * (config.headSizeScale ?? 1));
+ctx.font = `900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+let hLines = wrapText(ctx, config.headline || “”, W - textPadX * 2);
 
-  let subSize = Math.round(W * 0.03);
-  const subText = (config.showBadge && config.badge?.trim()) || "";
+let bSize = Math.round(W * 0.034 * (config.bodySizeScale ?? 1));
+ctx.font = `${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+const bLines = wrapText(ctx, config.body || “”, W - textPadX * 2);
 
-  const gapBase = bLines.length ? H * 0.03 : 0;
-  const gap = gapBase * (config.textGap ?? 1);
-  let hLH = hSize * 1.15;
-  let bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
-  const subH = subText ? subSize * 1.6 : 0;
-  let totalH = hLines.length * hLH;
-  let totalB = bLines.length * bLH;
+let subSize = Math.round(W * 0.03);
+const subText = (config.showBadge && config.badge?.trim()) || “”;
 
-  let contentH = subH + totalH + gap + totalB;
-  const textAreaTop = H * 0.40;
-  const usableH = H - textAreaTop - stripH - H * 0.04;
+const gapBase = bLines.length ? H * 0.03 : 0;
+const gap = gapBase * (config.textGap ?? 1);
+let hLH = hSize * 1.15;
+let bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
+const subH = subText ? subSize * 1.6 : 0;
+let totalH = hLines.length * hLH;
+let totalB = bLines.length * bLH;
 
-  if (contentH > usableH) {
-    const ratio = usableH / contentH;
-    hSize = Math.floor(hSize * ratio);
-    bSize = Math.floor(bSize * ratio);
-    subSize = Math.floor(subSize * ratio);
-    hLH = hSize * 1.15;
-    bLH = bSize * 1.55;
-    ctx.font = `900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    hLines = wrapText(ctx, config.headline || "", W - textPadX * 2);
-    totalH = hLines.length * hLH;
-    totalB = bLines.length * bLH;
-    contentH = (subText ? subSize * 1.6 : 0) + totalH + gap + totalB;
-  }
+let contentH = subH + totalH + gap + totalB;
+const textAreaTop = H * 0.40;
+const usableH = H - textAreaTop - stripH - H * 0.04;
 
-  const vAlign = config.textVAlign ?? 0.5;
-  const freeSpace = usableH - contentH;
-  const topOffset = textAreaTop + freeSpace * (vAlign * 0.5 + 0.5);
-  let curY = topOffset;
+if (contentH > usableH) {
+const ratio = usableH / contentH;
+hSize = Math.floor(hSize * ratio);
+bSize = Math.floor(bSize * ratio);
+subSize = Math.floor(subSize * ratio);
+hLH = hSize * 1.15;
+bLH = bSize * 1.55;
+ctx.font = `900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+hLines = wrapText(ctx, config.headline || “”, W - textPadX * 2);
+totalH = hLines.length * hLH;
+totalB = bLines.length * bLH;
+contentH = (subText ? subSize * 1.6 : 0) + totalH + gap + totalB;
+}
 
-  const align = config.textAlign || "center";
-  const autoOTextX = align === "left" ? textPadX : align === "right" ? W - textPadX : W / 2;
+const vAlign = config.textVAlign ?? 0.5;
+const freeSpace = usableH - contentH;
+const topOffset = textAreaTop + freeSpace * (vAlign * 0.5 + 0.5);
+let curY = topOffset;
 
-  const useFree = config.freePos;
-  const oHeadX = useFree && config.headPos ? config.headPos.x * W : autoOTextX;
-  const oHeadY = useFree && config.headPos ? config.headPos.y * H : curY + (subText ? subSize * 1.6 : 0);
-  const oBodyX = useFree && config.bodyPos ? config.bodyPos.x * W : autoOTextX;
-  const oBodyY = useFree && config.bodyPos ? config.bodyPos.y * H : curY + (subText ? subSize * 1.6 : 0) + totalH + gap;
-  const oAlign = align;
+const align = config.textAlign || “center”;
+const autoOTextX = align === “left” ? textPadX : align === “right” ? W - textPadX : W / 2;
 
-  if (subText && !useFree) {
-    ctx.font = `bold ${subSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.textAlign = align; ctx.textBaseline = "top";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(subText, autoOTextX, curY);
-    curY += subSize * 1.6;
-  }
+const useFree = config.freePos;
+const oHeadX = useFree && config.headPos ? config.headPos.x * W : autoOTextX;
+const oHeadY = useFree && config.headPos ? config.headPos.y * H : curY + (subText ? subSize * 1.6 : 0);
+const oBodyX = useFree && config.bodyPos ? config.bodyPos.x * W : autoOTextX;
+const oBodyY = useFree && config.bodyPos ? config.bodyPos.y * H : curY + (subText ? subSize * 1.6 : 0) + totalH + gap;
+const oAlign = align;
 
-  hLines.forEach((line, i) => {
-    ctx.font = `900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.textAlign = oAlign; ctx.textBaseline = "top";
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillText(line, oHeadX + 2, oHeadY + i * hLH + 2);
-    ctx.fillStyle = accent;
-    ctx.fillText(line, oHeadX, oHeadY + i * hLH);
-  });
+if (subText && !useFree) {
+ctx.font = `bold ${subSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+ctx.textAlign = align; ctx.textBaseline = “top”;
+ctx.fillStyle = “#ffffff”;
+ctx.fillText(subText, autoOTextX, curY);
+curY += subSize * 1.6;
+}
 
-  bLines.forEach((line, i) => {
-    ctx.font = `${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = oAlign; ctx.textBaseline = "top";
-    ctx.fillText(line, oBodyX, oBodyY + i * bLH);
-  });
+hLines.forEach((line, i) => {
+ctx.font = `900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+ctx.textAlign = oAlign; ctx.textBaseline = “top”;
+ctx.fillStyle = “rgba(0,0,0,0.35)”;
+ctx.fillText(line, oHeadX + 2, oHeadY + i * hLH + 2);
+ctx.fillStyle = accent;
+ctx.fillText(line, oHeadX, oHeadY + i * hLH);
+});
 
-  const fixedPad = W * 0.08;
-  if (config.showBranding) {
-    ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0, H - stripH, W, stripH);
-    const sf = Math.round(W * 0.018);
-    ctx.font = `bold ${sf}px Pretendard, 'Noto Sans KR', sans-serif`;
-    ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(config.company || "하이픽셀플러스", fixedPad * 0.6, H - stripH / 2);
-    ctx.textAlign = "right"; ctx.fillStyle = "#666";
-    ctx.fillText("Blackmagic Design Authorized Reseller", W - fixedPad * 0.6, H - stripH / 2);
-  }
+bLines.forEach((line, i) => {
+ctx.font = `${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+ctx.fillStyle = “#ffffff”;
+ctx.textAlign = oAlign; ctx.textBaseline = “top”;
+ctx.fillText(line, oBodyX, oBodyY + i * bLH);
+});
 
-  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+const fixedPad = W * 0.08;
+if (config.showBranding) {
+ctx.fillStyle = “rgba(0,0,0,0.7)”; ctx.fillRect(0, H - stripH, W, stripH);
+const sf = Math.round(W * 0.018);
+ctx.font = `bold ${sf}px Pretendard, 'Noto Sans KR', sans-serif`;
+ctx.textAlign = “left”; ctx.textBaseline = “middle”;
+ctx.fillStyle = “#ffffff”;
+ctx.fillText(config.company || “하이픽셀플러스”, fixedPad * 0.6, H - stripH / 2);
+ctx.textAlign = “right”; ctx.fillStyle = “#666”;
+ctx.fillText(“Blackmagic Design Authorized Reseller”, W - fixedPad * 0.6, H - stripH / 2);
+}
+
+ctx.textAlign = “left”; ctx.textBaseline = “alphabetic”;
 }
 
 // ─── Gaussian blur brush ─────────────────────────────────────────
 function applyMosaic(canvas, strokes) {
-  if (!strokes || !strokes.length) return;
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
+if (!strokes || !strokes.length) return;
+const ctx = canvas.getContext(“2d”);
+const W = canvas.width, H = canvas.height;
 
-  // For each stroke, create a blurred copy of the region and composite it
-  for (const stroke of strokes) {
-    if (!stroke.length) continue;
-    const r0 = stroke[0].r || 30;
-    const blurAmt = Math.max(4, Math.round(r0 * 0.6));
+// For each stroke, create a blurred copy of the region and composite it
+for (const stroke of strokes) {
+if (!stroke.length) continue;
+const r0 = stroke[0].r || 30;
+const blurAmt = Math.max(4, Math.round(r0 * 0.6));
 
-    // Build a clipping path from all points in this stroke
-    ctx.save();
-    ctx.beginPath();
-    for (const pt of stroke) {
-      const r = pt.r || 30;
-      ctx.moveTo(pt.x + r, pt.y);
-      ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
-    }
-    ctx.clip();
+```
+// Build a clipping path from all points in this stroke
+ctx.save();
+ctx.beginPath();
+for (const pt of stroke) {
+  const r = pt.r || 30;
+  ctx.moveTo(pt.x + r, pt.y);
+  ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+}
+ctx.clip();
 
-    // Draw blurred version of the canvas into the clipped region
-    // Use CanvasRenderingContext2D.filter for real gaussian blur
-    if (typeof ctx.filter !== "undefined") {
-      // Create temp canvas with current image
-      const tmp = document.createElement("canvas");
-      tmp.width = W; tmp.height = H;
-      const tctx = tmp.getContext("2d");
-      tctx.filter = `blur(${blurAmt}px)`;
-      tctx.drawImage(canvas, 0, 0);
-      ctx.drawImage(tmp, 0, 0);
-    } else {
-      // Fallback: simple pixelation for old browsers
-      const ps = Math.max(8, Math.round(r0 * 0.4));
-      for (const pt of stroke) {
-        const r = pt.r || 30;
-        const left = Math.max(0, Math.floor((pt.x - r) / ps) * ps);
-        const top  = Math.max(0, Math.floor((pt.y - r) / ps) * ps);
-        for (let bx = left; bx < Math.min(W, pt.x + r); bx += ps) {
-          for (let by = top; by < Math.min(H, pt.y + r); by += ps) {
-            const dx = bx + ps/2 - pt.x, dy = by + ps/2 - pt.y;
-            if (dx*dx + dy*dy > r*r) continue;
-            const d = ctx.getImageData(Math.min(bx,W-1), Math.min(by,H-1), 1, 1).data;
-            ctx.fillStyle = `rgb(${d[0]},${d[1]},${d[2]})`;
-            ctx.fillRect(bx, by, Math.min(ps,W-bx), Math.min(ps,H-by));
-          }
-        }
+// Draw blurred version of the canvas into the clipped region
+// Use CanvasRenderingContext2D.filter for real gaussian blur
+if (typeof ctx.filter !== "undefined") {
+  // Create temp canvas with current image
+  const tmp = document.createElement("canvas");
+  tmp.width = W; tmp.height = H;
+  const tctx = tmp.getContext("2d");
+  tctx.filter = `blur(${blurAmt}px)`;
+  tctx.drawImage(canvas, 0, 0);
+  ctx.drawImage(tmp, 0, 0);
+} else {
+  // Fallback: simple pixelation for old browsers
+  const ps = Math.max(8, Math.round(r0 * 0.4));
+  for (const pt of stroke) {
+    const r = pt.r || 30;
+    const left = Math.max(0, Math.floor((pt.x - r) / ps) * ps);
+    const top  = Math.max(0, Math.floor((pt.y - r) / ps) * ps);
+    for (let bx = left; bx < Math.min(W, pt.x + r); bx += ps) {
+      for (let by = top; by < Math.min(H, pt.y + r); by += ps) {
+        const dx = bx + ps/2 - pt.x, dy = by + ps/2 - pt.y;
+        if (dx*dx + dy*dy > r*r) continue;
+        const d = ctx.getImageData(Math.min(bx,W-1), Math.min(by,H-1), 1, 1).data;
+        ctx.fillStyle = `rgb(${d[0]},${d[1]},${d[2]})`;
+        ctx.fillRect(bx, by, Math.min(ps,W-bx), Math.min(ps,H-by));
       }
     }
-    ctx.restore();
   }
+}
+ctx.restore();
+```
+
+}
 }
 
 // ─── Preview component ──────────────────────────────────────────
 // ─── Font loader ─────────────────────────────────────────────
 let fontReady = false;
 try {
-  document.fonts.ready.then(() => { fontReady = true; });
-  setTimeout(() => { fontReady = true; }, 2000); // Fallback: proceed after 2s even if fonts fail
+document.fonts.ready.then(() => { fontReady = true; });
+setTimeout(() => { fontReady = true; }, 2000); // Fallback: proceed after 2s even if fonts fail
 } catch(e) { fontReady = true; }
 
 function CanvasPreview({ config, size, scale, exportRef }) {
-  const canvasRef = useRef(null);
-  const imgRef    = useRef(null);
-  const [canvasH, setCanvasH] = useState(size.h);
-  if (exportRef) exportRef.current = canvasRef;
+const canvasRef = useRef(null);
+const imgRef    = useRef(null);
+const [canvasH, setCanvasH] = useState(size.h);
+if (exportRef) exportRef.current = canvasRef;
 
-  const redraw = useCallback(() => {
-    if (canvasRef.current) {
-      drawCanvas(canvasRef.current, config, size, imgRef.current);
-      applyMosaic(canvasRef.current, config.blurStrokes);
-      setCanvasH(canvasRef.current.height);
-    }
-  }, [config, size]);
+const redraw = useCallback(() => {
+if (canvasRef.current) {
+drawCanvas(canvasRef.current, config, size, imgRef.current);
+applyMosaic(canvasRef.current, config.blurStrokes);
+setCanvasH(canvasRef.current.height);
+}
+}, [config, size]);
 
-  // Re-render once fonts are loaded
-  useEffect(() => {
-    if (!fontReady) {
-      const t = setInterval(() => { if (fontReady) { clearInterval(t); redraw(); } }, 200);
-      return () => clearInterval(t);
-    }
-  }, [redraw]);
+// Re-render once fonts are loaded
+useEffect(() => {
+if (!fontReady) {
+const t = setInterval(() => { if (fontReady) { clearInterval(t); redraw(); } }, 200);
+return () => clearInterval(t);
+}
+}, [redraw]);
 
-  useEffect(() => {
-    if (config.photoUrl) {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => { imgRef.current = img; redraw(); };
-      img.onerror = () => {
-        // Retry without crossOrigin for local files
-        const img2 = new Image();
-        img2.onload = () => { imgRef.current = img2; redraw(); };
-        img2.src = config.photoUrl;
-      };
-      img.src = config.photoUrl;
-    } else {
-      imgRef.current = null; redraw();
-    }
-  }, [config, size, redraw]);
+useEffect(() => {
+if (config.photoUrl) {
+const img = new Image();
+img.crossOrigin = “anonymous”;
+img.onload = () => { imgRef.current = img; redraw(); };
+img.onerror = () => {
+// Retry without crossOrigin for local files
+const img2 = new Image();
+img2.onload = () => { imgRef.current = img2; redraw(); };
+img2.src = config.photoUrl;
+};
+img.src = config.photoUrl;
+} else {
+imgRef.current = null; redraw();
+}
+}, [config, size, redraw]);
 
-  return (
-    <canvas ref={canvasRef}
-      style={{ width: size.w*scale, height: canvasH*scale, display:"block", borderRadius:4 }} />
-  );
+return (
+<canvas ref={canvasRef}
+style={{ width: size.w*scale, height: canvasH*scale, display:“block”, borderRadius:4 }} />
+);
 }
 
 // ─── Reseller codes (전화번호 뒷자리 4자리 → 회사명) ────────────
 const RESELLER_CODES = {
-  "1234": "디지털e세상",
-  "5678": "영상장비나라",
-  "9012": "프로미디어",
-  "3456": "스튜디오킹",
-  "7890": "비디오프로",
-  "3515": "하이픽셀플러스",
-  // 리셀러 추가: "전화번호뒷4자리": "회사명"
+“1234”: { name: “디지털e세상”,     logo: “” },
+“5678”: { name: “영상장비나라”,     logo: “” },
+“9012”: { name: “프로미디어”,       logo: “” },
+“3456”: { name: “스튜디오킹”,       logo: “” },
+“7890”: { name: “비디오프로”,       logo: “” },
+“3515”: { name: “하이픽셀플러스”,   logo: “https://raw.githubusercontent.com/hosuproduction-netizen/bmd-image-maker/main/images/hipixel-logo.png” },
+// 리셀러 추가: “전화번호뒷4자리”: { name: “회사명”, logo: “로고URL” }
 };
 
 // ─── Auth Gate ──────────────────────────────────────────────
 function App() {
-  const [authCode, setAuthCode] = useState(() => {
-    try { return localStorage.getItem("bmd_auth_code") || ""; } catch(e) { return ""; }
-  });
-  const [authInput, setAuthInput] = useState("");
-  const [authError, setAuthError] = useState("");
+const [authCode, setAuthCode] = useState(() => {
+try { return localStorage.getItem(“bmd_auth_code”) || “”; } catch(e) { return “”; }
+});
+const [authInput, setAuthInput] = useState(””);
+const [authError, setAuthError] = useState(””);
 
-  const isAuthed = !!RESELLER_CODES[authCode];
-  const resellerName = RESELLER_CODES[authCode] || "";
+const isAuthed = !!RESELLER_CODES[authCode];
+const resellerName = RESELLER_CODES[authCode]?.name || “”;
+const resellerLogo = RESELLER_CODES[authCode]?.logo || “”;
 
-  const handleLogin = () => {
-    const code = authInput.trim().replace(/[^0-9]/g, "");
-    if (RESELLER_CODES[code]) {
-      setAuthCode(code);
-      try { localStorage.setItem("bmd_auth_code", code); } catch(e) {}
-      setAuthError("");
-    } else {
-      setAuthError("등록되지 않은 번호입니다. 하이픽셀플러스에 문의해주세요.");
-    }
-  };
+const handleLogin = () => {
+const code = authInput.trim().replace(/[^0-9]/g, “”);
+if (RESELLER_CODES[code]) {
+setAuthCode(code);
+try { localStorage.setItem(“bmd_auth_code”, code); } catch(e) {}
+setAuthError(””);
+} else {
+setAuthError(“등록되지 않은 번호입니다. 하이픽셀플러스에 문의해주세요.”);
+}
+};
 
-  const handleLogout = () => {
-    setAuthCode("");
-    try { localStorage.removeItem("bmd_auth_code"); } catch(e) {}
-  };
+const handleLogout = () => {
+setAuthCode(””);
+try { localStorage.removeItem(“bmd_auth_code”); } catch(e) {}
+};
 
-  if (!isAuthed) {
-    return (
-      <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
-        background:"#111", fontFamily:"Pretendard, 'Noto Sans KR', sans-serif" }}>
-        <div style={{ width:420, padding:"48px 40px", background:"#fff", borderRadius:16,
-          boxShadow:"0 20px 60px rgba(0,0,0,0.3)", textAlign:"center" }}>
-          <div style={{ marginBottom:8 }}>
-            <div style={{ width:8, height:8, background:"#111", borderRadius:"50%", display:"inline-block", marginRight:10 }}/>
-            <span style={{ fontWeight:800, fontSize:16, letterSpacing:"0.12em" }}>BLACKMAGIC DESIGN</span>
-          </div>
-          <div style={{ fontSize:14, color:"#999", marginBottom:32 }}>리셀러 이미지 메이커</div>
-          <div style={{ fontSize:18, fontWeight:700, color:"#333", marginBottom:8 }}>리셀러 전용</div>
-          <div style={{ fontSize:14, color:"#888", marginBottom:28 }}>
-            등록된 전화번호 뒷자리 4자리를 입력해주세요
-          </div>
-          <input value={authInput}
-            onChange={e => { setAuthInput(e.target.value.replace(/[^0-9]/g, "").slice(0,4)); setAuthError(""); }}
-            onKeyDown={e => e.key === "Enter" && handleLogin()}
-            placeholder="0000"
-            inputMode="numeric"
-            maxLength={4}
-            style={{ width:"100%", padding:"18px 20px", fontSize:32, fontWeight:700,
-              borderRadius:10, border:"2px solid #ddd", outline:"none", textAlign:"center",
-              letterSpacing:"0.3em", marginBottom:12 }}/>
-          {authError && (
-            <div style={{ fontSize:13, color:"#e05555", marginBottom:12, padding:"8px",
-              background:"#fff0f0", borderRadius:6 }}>{authError}</div>
-          )}
-          <button onClick={handleLogin}
-            disabled={authInput.length < 4}
-            style={{ width:"100%", padding:"16px 0", borderRadius:10, border:"none",
-              background: authInput.length >= 4 ? "#111" : "#ccc", color:"#fff", fontSize:16, fontWeight:800,
-              cursor: authInput.length >= 4 ? "pointer" : "default", letterSpacing:"0.05em" }}>
-            입장하기
-          </button>
-          <div style={{ marginTop:24, fontSize:12, color:"#bbb", lineHeight:1.8 }}>
-            등록되지 않은 경우<br/>
-            하이픽셀플러스에 문의해주세요
-          </div>
-        </div>
-      </div>
-    );
-  }
+if (!isAuthed) {
+return (
+<div style={{ height:“100vh”, display:“flex”, alignItems:“center”, justifyContent:“center”,
+background:”#111”, fontFamily:“Pretendard, ‘Noto Sans KR’, sans-serif” }}>
+<div style={{ width:420, padding:“48px 40px”, background:”#fff”, borderRadius:16,
+boxShadow:“0 20px 60px rgba(0,0,0,0.3)”, textAlign:“center” }}>
+<div style={{ marginBottom:8 }}>
+<div style={{ width:8, height:8, background:”#111”, borderRadius:“50%”, display:“inline-block”, marginRight:10 }}/>
+<span style={{ fontWeight:800, fontSize:16, letterSpacing:“0.12em” }}>BLACKMAGIC DESIGN</span>
+</div>
+<div style={{ fontSize:14, color:”#999”, marginBottom:32 }}>리셀러 이미지 메이커</div>
+<div style={{ fontSize:18, fontWeight:700, color:”#333”, marginBottom:8 }}>리셀러 전용</div>
+<div style={{ fontSize:14, color:”#888”, marginBottom:28 }}>
+등록된 전화번호 뒷자리 4자리를 입력해주세요
+</div>
+<input value={authInput}
+onChange={e => { setAuthInput(e.target.value.replace(/[^0-9]/g, “”).slice(0,4)); setAuthError(””); }}
+onKeyDown={e => e.key === “Enter” && handleLogin()}
+placeholder=“0000”
+inputMode=“numeric”
+maxLength={4}
+style={{ width:“100%”, padding:“18px 20px”, fontSize:32, fontWeight:700,
+borderRadius:10, border:“2px solid #ddd”, outline:“none”, textAlign:“center”,
+letterSpacing:“0.3em”, marginBottom:12 }}/>
+{authError && (
+<div style={{ fontSize:13, color:”#e05555”, marginBottom:12, padding:“8px”,
+background:”#fff0f0”, borderRadius:6 }}>{authError}</div>
+)}
+<button onClick={handleLogin}
+disabled={authInput.length < 4}
+style={{ width:“100%”, padding:“16px 0”, borderRadius:10, border:“none”,
+background: authInput.length >= 4 ? “#111” : “#ccc”, color:”#fff”, fontSize:16, fontWeight:800,
+cursor: authInput.length >= 4 ? “pointer” : “default”, letterSpacing:“0.05em” }}>
+입장하기
+</button>
+<div style={{ marginTop:24, fontSize:12, color:”#bbb”, lineHeight:1.8 }}>
+등록되지 않은 경우<br/>
+하이픽셀플러스에 문의해주세요
+</div>
+</div>
+</div>
+);
+}
 
-  return <MainApp resellerName={resellerName} handleLogout={handleLogout} />;
+return <MainApp resellerName={resellerName} resellerLogo={resellerLogo} handleLogout={handleLogout} />;
 }
 
 // ─── Main App ────────────────────────────────────────────────
-function MainApp({ resellerName, handleLogout }) {
-  const [pasteHint, setPasteHint] = useState(false);
-  const [size,     setSize]     = useState(SIZES[0]);
-  const [fmt,      setFmt]      = useState("png");
-  const [customColors, setCustomColors] = useState([]);
-  const [summarizing, setSummarizing] = useState(false);
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [apiKey, setApiKey] = useState(() => {
-    try { return localStorage.getItem("bmd_gemini_api_key") || ""; } catch(e) { return ""; }
-  });
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const colorPickerRef = useRef(null);
+function MainApp({ resellerName, resellerLogo, handleLogout }) {
+const [pasteHint, setPasteHint] = useState(false);
+const [size,     setSize]     = useState(SIZES[0]);
+const [fmt,      setFmt]      = useState(“png”);
+const [customColors, setCustomColors] = useState([]);
+const [summarizing, setSummarizing] = useState(false);
+const [collapsed, setCollapsed] = useState({ photo:false, font:false, pos:false, layout:true });
+const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+const [apiKey, setApiKey] = useState(() => {
+try { return localStorage.getItem(“bmd_gemini_api_key”) || “”; } catch(e) { return “”; }
+});
+const [apiKeyInput, setApiKeyInput] = useState(””);
+const colorPickerRef = useRef(null);
 
-  // ── Slide system ──
-  const defaultSlide = (overrides={}) => ({
-    id: Date.now() + Math.random(),
-    photoUrl: null,
-    headline:  "",
-    body:      "본문을 입력하세요.",
-    badge:     "",
-    imgScale:  1, imgOffsetX: 0, imgOffsetY: 0,
-    blurStrokes: [],
-    headPos: null, bodyPos: null, // {x:0-1, y:0-1} for free positioning
-    ...overrides,
-  });
+// ── Slide system ──
+const defaultSlide = (overrides={}) => ({
+id: Date.now() + Math.random(),
+photoUrl: null,
+headline:  “”,
+body:      “본문을 입력하세요.”,
+badge:     “”,
+imgScale:  1, imgOffsetX: 0, imgOffsetY: 0,
+blurStrokes: [],
+headPos: null, bodyPos: null, // {x:0-1, y:0-1} for free positioning
+…overrides,
+});
 
-  const [slides,       setSlides]       = useState([defaultSlide({
-    photoUrl: "https://raw.githubusercontent.com/hosuproduction-netizen/bmd-image-maker/main/images/sample.jpg",
-    headline: "SSD? 이제 안녕. 👋",
-    body: "HyperDeck에서 Cloud Store Max로 바로 쏘세요.\n네트워크 연결만으로 여러 대 동시 녹화 완료!\n복잡했던 멀티캠 워크플로우,\n이제 다이렉트 레코딩으로 단순하게 정복하세요.",
-    badge: "",
-  })]);
-  const [activeSlide,  setActiveSlide]  = useState(0);
+const [slides,       setSlides]       = useState([defaultSlide({
+photoUrl: “https://raw.githubusercontent.com/hosuproduction-netizen/bmd-image-maker/main/images/sample.jpg”,
+headline: “SSD? 이제 안녕. 👋”,
+body: “HyperDeck에서 Cloud Store Max로 바로 쏘세요.\n네트워크 연결만으로 여러 대 동시 녹화 완료!\n복잡했던 멀티캠 워크플로우,\n이제 다이렉트 레코딩으로 단순하게 정복하세요.”,
+badge: “”,
+})]);
+const [activeSlide,  setActiveSlide]  = useState(0);
 
-  // Load saved company name
-  const savedCompany = (() => { try { return localStorage.getItem("bmd_company") || ""; } catch(e) { return ""; } })();
+// Load saved company name
+const savedCompany = (() => { try { return localStorage.getItem(“bmd_company”) || “”; } catch(e) { return “”; } })();
 
-  // Shared settings across all slides
-  const [shared, setShared] = useState({
-    photoRatio: 0.60, showBranding: true, accentColor: "#ffffff",
-    company: savedCompany || resellerName || "하이픽셀플러스", headSizeScale: 1, bodySizeScale: 1,
-    textGap: 1, textVAlign: 0, bodyLineHeight: 1,
-    layout: "split", overlayStart: 0.35, textPadX: 0.08,
-    showBadge: false, textAlign: "center", freePos: false,
-  });
+// Shared settings across all slides
+const [shared, setShared] = useState({
+photoRatio: 0.60, showBranding: true, accentColor: “#ffffff”,
+company: savedCompany || resellerName || “하이픽셀플러스”, headSizeScale: 1, bodySizeScale: 1,
+textGap: 1, textVAlign: 0, bodyLineHeight: 1,
+layout: “split”, overlayStart: 0.35, textPadX: 0.08,
+showBadge: false, textAlign: “center”, freePos: false,
+});
 
-  // Save company name to localStorage
-  useEffect(() => {
-    try { localStorage.setItem("bmd_company", shared.company); } catch(e) {}
-  }, [shared.company]);
+// Save company name to localStorage
+useEffect(() => {
+try { localStorage.setItem(“bmd_company”, shared.company); } catch(e) {}
+}, [shared.company]);
 
-  const slide    = slides[activeSlide] ?? slides[0];
-  const photoUrl = slide.photoUrl;
-  const setPhotoUrl = (url) => updateSlide({ photoUrl: url });
-  const cfg = { ...shared, ...slide };
+const slide    = slides[activeSlide] ?? slides[0];
+const photoUrl = slide.photoUrl;
+const setPhotoUrl = (url) => updateSlide({ photoUrl: url });
+const cfg = { …shared, …slide };
 
-  const updateSlide = (patch) => {
-    setSlides(prev => prev.map((s, i) => i === activeSlide ? { ...s, ...patch } : s));
+const updateSlide = (patch) => {
+setSlides(prev => prev.map((s, i) => i === activeSlide ? { …s, …patch } : s));
+};
+const setCfg = (valOrFn) => {
+if (typeof valOrFn === “function”) {
+setSlides(prev => prev.map((s, i) => {
+if (i !== activeSlide) return s;
+const next = valOrFn({ …shared, …s });
+// split shared vs slide keys
+const sharedKeys = Object.keys(shared);
+const sharedPatch = {}, slidePatch = {};
+Object.entries(next).forEach(([k,v]) => {
+if (sharedKeys.includes(k)) sharedPatch[k] = v; else slidePatch[k] = v;
+});
+setShared(sh => ({ …sh, …sharedPatch }));
+return { …s, …slidePatch };
+}));
+} else {
+const sharedKeys = Object.keys(shared);
+const sharedPatch = {}, slidePatch = {};
+Object.entries(valOrFn).forEach(([k,v]) => {
+if (sharedKeys.includes(k)) sharedPatch[k] = v; else slidePatch[k] = v;
+});
+if (Object.keys(sharedPatch).length) setShared(sh => ({ …sh, …sharedPatch }));
+if (Object.keys(slidePatch).length)  updateSlide(slidePatch);
+}
+};
+
+const addSlide = () => {
+const newSlide = defaultSlide();
+setSlides(prev => […prev, newSlide]);
+setActiveSlide(slides.length);
+};
+
+const duplicateSlide = () => {
+const copy = { …slide, id: Date.now() + Math.random() };
+setSlides(prev => […prev.slice(0, activeSlide+1), copy, …prev.slice(activeSlide+1)]);
+setActiveSlide(activeSlide + 1);
+};
+
+const deleteSlide = (idx) => {
+if (slides.length === 1) return;
+setSlides(prev => prev.filter((_, i) => i !== idx));
+setActiveSlide(Math.min(activeSlide, slides.length - 2));
+};
+
+const fileRef    = useRef(null);
+const exportRef  = useRef(null);
+const dragAreaRef = useRef(null);
+const dragState  = useRef(null);
+const [isDragging, setIsDragging] = useState(false);
+const [blurMode, setBlurMode] = useState(false);
+const [brushSize, setBrushSize] = useState(40);
+const blurStrokeRef = useRef(null); // current stroke being painted
+
+// Extract clientX/clientY from mouse or touch event
+const getPointer = (e) => {
+if (e.touches && e.touches.length > 0) return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+if (e.changedTouches && e.changedTouches.length > 0) return { clientX: e.changedTouches[0].clientX, clientY: e.changedTouches[0].clientY };
+return { clientX: e.clientX, clientY: e.clientY };
+};
+
+// Convert event to full-resolution canvas coordinates
+const toCanvasCoords = (e) => {
+const rect = dragAreaRef.current?.getBoundingClientRect();
+if (!rect) return null;
+const p = getPointer(e);
+const canvasEl = exportRef.current?.current;
+const cW = canvasEl ? canvasEl.width : size.w;
+const cH = canvasEl ? canvasEl.height : size.h;
+const x = (p.clientX - rect.left) / rect.width * cW;
+const y = (p.clientY - rect.top) / rect.height * cH;
+return { x, y, cW, cH };
+};
+
+const textDragRef = useRef(null); // {target:“head”|“body”, startX, startY, origX, origY}
+
+const onDragStart = (e) => {
+if (e.touches) e.preventDefault();
+const p = getPointer(e);
+
+```
+// Blur mode
+if (blurMode) {
+  const pt = toCanvasCoords(e);
+  if (!pt) return;
+  setIsDragging(true);
+  const r = brushSize / 100 * size.w;
+  blurStrokeRef.current = [{ x: pt.x, y: pt.y, r }];
+  updateSlide({ blurStrokes: [...(slide.blurStrokes||[]), blurStrokeRef.current] });
+  return;
+}
+
+// Free position mode: drag text blocks
+if (cfg.freePos) {
+  const pt = toCanvasCoords(e);
+  if (!pt) return;
+  // Determine which block: top half = head, bottom half = body
+  const headY = slide.headPos ? slide.headPos.y * pt.cH : pt.cH * 0.5;
+  const bodyY = slide.bodyPos ? slide.bodyPos.y * pt.cH : pt.cH * 0.7;
+  const distHead = Math.abs(pt.y - headY);
+  const distBody = Math.abs(pt.y - bodyY);
+  const target = distHead <= distBody ? "head" : "body";
+  const pos = target === "head" ? slide.headPos : slide.bodyPos;
+  setIsDragging(true);
+  textDragRef.current = {
+    target,
+    startX: p.clientX, startY: p.clientY,
+    origX: pos ? pos.x : 0.5,
+    origY: pos ? pos.y : (target === "head" ? 0.5 : 0.7),
   };
-  const setCfg = (valOrFn) => {
-    if (typeof valOrFn === "function") {
-      setSlides(prev => prev.map((s, i) => {
-        if (i !== activeSlide) return s;
-        const next = valOrFn({ ...shared, ...s });
-        // split shared vs slide keys
-        const sharedKeys = Object.keys(shared);
-        const sharedPatch = {}, slidePatch = {};
-        Object.entries(next).forEach(([k,v]) => {
-          if (sharedKeys.includes(k)) sharedPatch[k] = v; else slidePatch[k] = v;
-        });
-        setShared(sh => ({ ...sh, ...sharedPatch }));
-        return { ...s, ...slidePatch };
-      }));
-    } else {
-      const sharedKeys = Object.keys(shared);
-      const sharedPatch = {}, slidePatch = {};
-      Object.entries(valOrFn).forEach(([k,v]) => {
-        if (sharedKeys.includes(k)) sharedPatch[k] = v; else slidePatch[k] = v;
-      });
-      if (Object.keys(sharedPatch).length) setShared(sh => ({ ...sh, ...sharedPatch }));
-      if (Object.keys(slidePatch).length)  updateSlide(slidePatch);
-    }
+  return;
+}
+
+// Normal image drag
+if (!photoUrl) return;
+setIsDragging(true);
+dragState.current = {
+  startX: p.clientX,
+  startY: p.clientY,
+  startOX: cfg.imgOffsetX,
+  startOY: cfg.imgOffsetY,
+};
+```
+
+};
+
+const onDragMove = (e) => {
+if (e.touches) e.preventDefault();
+
+```
+// Blur mode
+if (blurMode && isDragging && blurStrokeRef.current) {
+  const pt = toCanvasCoords(e);
+  if (!pt) return;
+  const r = brushSize / 100 * size.w;
+  blurStrokeRef.current.push({ x: pt.x, y: pt.y, r });
+  const strokes = [...(slide.blurStrokes||[])];
+  strokes[strokes.length - 1] = [...blurStrokeRef.current];
+  updateSlide({ blurStrokes: strokes });
+  return;
+}
+
+// Free position text drag
+if (textDragRef.current && isDragging) {
+  const { target, startX, startY, origX, origY } = textDragRef.current;
+  const rect = dragAreaRef.current?.getBoundingClientRect();
+  if (!rect) return;
+  const p = getPointer(e);
+  const dx = (p.clientX - startX) / rect.width;
+  const dy = (p.clientY - startY) / rect.height;
+  const newPos = {
+    x: Math.max(0, Math.min(1, origX + dx)),
+    y: Math.max(0, Math.min(1, origY + dy)),
   };
+  if (target === "head") updateSlide({ headPos: newPos });
+  else updateSlide({ bodyPos: newPos });
+  return;
+}
 
-  const addSlide = () => {
-    const newSlide = defaultSlide();
-    setSlides(prev => [...prev, newSlide]);
-    setActiveSlide(slides.length);
-  };
+// Normal image drag
+if (!dragState.current) return;
+const { startX, startY, startOX, startOY } = dragState.current;
+const rect = dragAreaRef.current?.getBoundingClientRect();
+if (!rect) return;
+const p = getPointer(e);
+const dx = (p.clientX - startX) / rect.width  * 2;
+const dy = (p.clientY - startY) / rect.height * 2;
+setCfg(prev => ({
+  ...prev,
+  imgOffsetX: Math.max(-1, Math.min(1, startOX - dx)),
+  imgOffsetY: Math.max(-1, Math.min(1, startOY - dy)),
+}));
+```
 
-  const duplicateSlide = () => {
-    const copy = { ...slide, id: Date.now() + Math.random() };
-    setSlides(prev => [...prev.slice(0, activeSlide+1), copy, ...prev.slice(activeSlide+1)]);
-    setActiveSlide(activeSlide + 1);
-  };
+};
 
-  const deleteSlide = (idx) => {
-    if (slides.length === 1) return;
-    setSlides(prev => prev.filter((_, i) => i !== idx));
-    setActiveSlide(Math.min(activeSlide, slides.length - 2));
-  };
+const onDragEnd = () => {
+dragState.current = null;
+blurStrokeRef.current = null;
+textDragRef.current = null;
+setIsDragging(false);
+};
+const [urlInput,   setUrlInput]   = useState(””);
+const [urlError,   setUrlError]   = useState(””);
+const [photoMode,  setPhotoMode]  = useState(“upload”); // “upload” | “url”
 
-  const fileRef    = useRef(null);
-  const exportRef  = useRef(null);
-  const dragAreaRef = useRef(null);
-  const dragState  = useRef(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [blurMode, setBlurMode] = useState(false);
-  const [brushSize, setBrushSize] = useState(40);
-  const blurStrokeRef = useRef(null); // current stroke being painted
+const handleFile = (e) => {
+const f = e.target.files[0]; if (!f) return;
+loadImageFile(f);
+};
 
-  // Extract clientX/clientY from mouse or touch event
-  const getPointer = (e) => {
-    if (e.touches && e.touches.length > 0) return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
-    if (e.changedTouches && e.changedTouches.length > 0) return { clientX: e.changedTouches[0].clientX, clientY: e.changedTouches[0].clientY };
-    return { clientX: e.clientX, clientY: e.clientY };
-  };
+const loadImageFile = (file) => {
+if (!file || !file.type.startsWith(“image/”)) return;
+const r = new FileReader();
+r.onload = ev => { setPhotoUrl(ev.target.result); setUrlError(””); setPasteHint(false); };
+r.readAsDataURL(file);
+};
 
-  // Convert event to full-resolution canvas coordinates
-  const toCanvasCoords = (e) => {
-    const rect = dragAreaRef.current?.getBoundingClientRect();
-    if (!rect) return null;
-    const p = getPointer(e);
-    const canvasEl = exportRef.current?.current;
-    const cW = canvasEl ? canvasEl.width : size.w;
-    const cH = canvasEl ? canvasEl.height : size.h;
-    const x = (p.clientX - rect.left) / rect.width * cW;
-    const y = (p.clientY - rect.top) / rect.height * cH;
-    return { x, y, cW, cH };
-  };
+// Global paste listener (Ctrl+V / Cmd+V anywhere on page)
+useEffect(() => {
+const onPaste = (e) => {
+// Skip if typing in input/textarea
+const tag = document.activeElement?.tagName;
+if (tag === “INPUT” || tag === “TEXTAREA”) return;
 
-  const textDragRef = useRef(null); // {target:"head"|"body", startX, startY, origX, origY}
+```
+  const items = e.clipboardData?.items;
+  if (!items) return;
 
-  const onDragStart = (e) => {
-    if (e.touches) e.preventDefault();
-    const p = getPointer(e);
-
-    // Blur mode
-    if (blurMode) {
-      const pt = toCanvasCoords(e);
-      if (!pt) return;
-      setIsDragging(true);
-      const r = brushSize / 100 * size.w;
-      blurStrokeRef.current = [{ x: pt.x, y: pt.y, r }];
-      updateSlide({ blurStrokes: [...(slide.blurStrokes||[]), blurStrokeRef.current] });
+  // 1. Try direct image data first
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      loadImageFile(item.getAsFile());
       return;
     }
+  }
 
-    // Free position mode: drag text blocks
-    if (cfg.freePos) {
-      const pt = toCanvasCoords(e);
-      if (!pt) return;
-      // Determine which block: top half = head, bottom half = body
-      const headY = slide.headPos ? slide.headPos.y * pt.cH : pt.cH * 0.5;
-      const bodyY = slide.bodyPos ? slide.bodyPos.y * pt.cH : pt.cH * 0.7;
-      const distHead = Math.abs(pt.y - headY);
-      const distBody = Math.abs(pt.y - bodyY);
-      const target = distHead <= distBody ? "head" : "body";
-      const pos = target === "head" ? slide.headPos : slide.bodyPos;
-      setIsDragging(true);
-      textDragRef.current = {
-        target,
-        startX: p.clientX, startY: p.clientY,
-        origX: pos ? pos.x : 0.5,
-        origY: pos ? pos.y : (target === "head" ? 0.5 : 0.7),
-      };
+  // 2. Try HTML (some sites copy images as HTML <img>)
+  const html = e.clipboardData.getData("text/html");
+  if (html) {
+    const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (match && match[1]) {
+      tryLoadImageUrl(match[1]);
       return;
     }
+  }
 
-    // Normal image drag
-    if (!photoUrl) return;
-    setIsDragging(true);
-    dragState.current = {
-      startX: p.clientX,
-      startY: p.clientY,
-      startOX: cfg.imgOffsetX,
-      startOY: cfg.imgOffsetY,
-    };
-  };
+  // 3. Try plain text URL
+  const text = e.clipboardData.getData("text/plain")?.trim();
+  if (text && /^https?:\/\/.+\.(jpg|jpeg|png|webp|gif)/i.test(text)) {
+    tryLoadImageUrl(text);
+  }
+};
 
-  const onDragMove = (e) => {
-    if (e.touches) e.preventDefault();
+window.addEventListener("paste", onPaste);
+return () => window.removeEventListener("paste", onPaste);
+```
 
-    // Blur mode
-    if (blurMode && isDragging && blurStrokeRef.current) {
-      const pt = toCanvasCoords(e);
-      if (!pt) return;
-      const r = brushSize / 100 * size.w;
-      blurStrokeRef.current.push({ x: pt.x, y: pt.y, r });
-      const strokes = [...(slide.blurStrokes||[])];
-      strokes[strokes.length - 1] = [...blurStrokeRef.current];
-      updateSlide({ blurStrokes: strokes });
-      return;
-    }
+}, []);
 
-    // Free position text drag
-    if (textDragRef.current && isDragging) {
-      const { target, startX, startY, origX, origY } = textDragRef.current;
-      const rect = dragAreaRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const p = getPointer(e);
-      const dx = (p.clientX - startX) / rect.width;
-      const dy = (p.clientY - startY) / rect.height;
-      const newPos = {
-        x: Math.max(0, Math.min(1, origX + dx)),
-        y: Math.max(0, Math.min(1, origY + dy)),
-      };
-      if (target === "head") updateSlide({ headPos: newPos });
-      else updateSlide({ bodyPos: newPos });
-      return;
-    }
+const tryLoadImageUrl = (url) => {
+const img = new Image();
+img.crossOrigin = “anonymous”;
+img.onload = () => setPhotoUrl(url);
+img.onerror = () => {
+// Try CORS proxy
+const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+const img2 = new Image();
+img2.crossOrigin = “anonymous”;
+img2.onload = () => setPhotoUrl(proxyUrl);
+img2.onerror = () => {
+// Last resort: use directly without crossOrigin (will work for display but not export)
+setPhotoUrl(url);
+};
+img2.src = proxyUrl;
+};
+img.src = url;
+};
 
-    // Normal image drag
-    if (!dragState.current) return;
-    const { startX, startY, startOX, startOY } = dragState.current;
-    const rect = dragAreaRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const p = getPointer(e);
-    const dx = (p.clientX - startX) / rect.width  * 2;
-    const dy = (p.clientY - startY) / rect.height * 2;
-    setCfg(prev => ({
-      ...prev,
-      imgOffsetX: Math.max(-1, Math.min(1, startOX - dx)),
-      imgOffsetY: Math.max(-1, Math.min(1, startOY - dy)),
-    }));
-  };
+// ── Undo history (cfg only, not text fields)
+const historyRef = useRef([]);          // stack of past cfg snapshots
+const isUndoingRef = useRef(false);
 
-  const onDragEnd = () => {
-    dragState.current = null;
-    blurStrokeRef.current = null;
-    textDragRef.current = null;
-    setIsDragging(false);
-  };
-  const [urlInput,   setUrlInput]   = useState("");
-  const [urlError,   setUrlError]   = useState("");
-  const [photoMode,  setPhotoMode]  = useState("upload"); // "upload" | "url"
+// Push to history whenever cfg changes (skip text fields — they have native undo)
+const prevCfgRef = useRef(cfg);
+useEffect(() => {
+if (isUndoingRef.current) return;
+const prev = prevCfgRef.current;
+const curr = cfg;
+// Only track non-text changes (sliders, toggles, colors)
+const nonTextKeys = [“photoRatio”,“showBranding”,“accentColor”,“imgScale”,
+“imgOffsetX”,“imgOffsetY”,“headSizeScale”,“bodySizeScale”,
+“textGap”,“textVAlign”,“bodyLineHeight”,“layout”,“overlayStart”,“textPadX”,“showBadge”,“textAlign”,“freePos”];
+const changed = nonTextKeys.some(k => prev[k] !== curr[k]);
+if (changed) {
+historyRef.current.push(prev);
+if (historyRef.current.length > 50) historyRef.current.shift();
+}
+prevCfgRef.current = curr;
+}, [cfg]);
 
-  const handleFile = (e) => {
-    const f = e.target.files[0]; if (!f) return;
-    loadImageFile(f);
-  };
+// Ctrl+Z: undo cfg when textarea/input is NOT focused
+useEffect(() => {
+const onKeyDown = (e) => {
+if (!(e.key === “z” && (e.ctrlKey || e.metaKey))) return;
+const tag = document.activeElement?.tagName;
+if (tag === “INPUT” || tag === “TEXTAREA”) return; // let native undo handle it
+e.preventDefault();
+if (historyRef.current.length === 0) return;
+isUndoingRef.current = true;
+const prev = historyRef.current.pop();
+setCfg(c => ({ …c, …prev }));
+setTimeout(() => { isUndoingRef.current = false; }, 0);
+};
+window.addEventListener(“keydown”, onKeyDown);
+return () => window.removeEventListener(“keydown”, onKeyDown);
+}, []);
 
-  const loadImageFile = (file) => {
-    if (!file || !file.type.startsWith("image/")) return;
-    const r = new FileReader();
-    r.onload = ev => { setPhotoUrl(ev.target.result); setUrlError(""); setPasteHint(false); };
-    r.readAsDataURL(file);
-  };
+const handleUrlLoad = () => {
+const url = urlInput.trim();
+if (!url) return;
+setUrlError(“⏳ 불러오는 중…”);
 
-  // Global paste listener (Ctrl+V / Cmd+V anywhere on page)
-  useEffect(() => {
-    const onPaste = (e) => {
-      // Skip if typing in input/textarea
-      const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+```
+const proxies = [
+  url,
+  `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  `https://cors-anywhere.herokuapp.com/${url}`,
+];
 
-      const items = e.clipboardData?.items;
-      if (!items) return;
+let idx = 0;
+const tryNext = () => {
+  if (idx >= proxies.length) {
+    setUrlError("모든 방법으로 불러오기 실패했습니다.\n→ 이미지를 PC에 저장 후 '파일 업로드' 탭을 이용해 주세요.");
+    return;
+  }
+  const src = proxies[idx++];
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload  = () => { setPhotoUrl(src); setUrlError(""); };
+  img.onerror = () => tryNext();
+  img.src = src;
+};
 
-      // 1. Try direct image data first
-      for (const item of items) {
-        if (item.type.startsWith("image/")) {
-          loadImageFile(item.getAsFile());
-          return;
-        }
-      }
+tryNext();
+```
 
-      // 2. Try HTML (some sites copy images as HTML <img>)
-      const html = e.clipboardData.getData("text/html");
-      if (html) {
-        const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-        if (match && match[1]) {
-          tryLoadImageUrl(match[1]);
-          return;
-        }
-      }
+};
 
-      // 3. Try plain text URL
-      const text = e.clipboardData.getData("text/plain")?.trim();
-      if (text && /^https?:\/\/.+\.(jpg|jpeg|png|webp|gif)/i.test(text)) {
-        tryLoadImageUrl(text);
-      }
-    };
+// ── Copyright metadata injection ──
+const injectMetadata = (dataUrl, mime) => {
+try {
+const copy = cfg.company || “하이픽셀플러스”;
+const year = new Date().getFullYear();
+const xmpStr = [
+‘<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>’,
+‘<x:xmpmeta xmlns:x=“adobe:ns:meta/”>’,
+‘<rdf:RDF xmlns:rdf=“http://www.w3.org/1999/02/22-rdf-syntax-ns#”>’,
+‘<rdf:Description’,
+’ xmlns:dc=“http://purl.org/dc/elements/1.1/”’,
+’ xmlns:xmpRights=“http://ns.adobe.com/xap/1.0/rights/”’,
+’ xmlns:photoshop=“http://ns.adobe.com/photoshop/1.0/”>’,
+`<dc:rights><rdf:Alt><rdf:li xml:lang="x-default">© ${year} ${copy}. All rights reserved. Created with BMD 리셀러 이미지 메이커</rdf:li></rdf:Alt></dc:rights>`,
+`<dc:creator><rdf:Seq><rdf:li>${copy}</rdf:li></rdf:Seq></dc:creator>`,
+`<xmpRights:Marked>True</xmpRights:Marked>`,
+`<photoshop:Credit>${copy} - Blackmagic Design Authorized Reseller</photoshop:Credit>`,
+‘</rdf:Description>’,
+‘</rdf:RDF>’,
+‘</x:xmpmeta>’,
+‘<?xpacket end="w"?>’,
+].join(’\n’);
 
-    window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
-  }, []);
+```
+  const bin = atob(dataUrl.split(',')[1]);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
 
-  const tryLoadImageUrl = (url) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => setPhotoUrl(url);
-    img.onerror = () => {
-      // Try CORS proxy
-      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-      const img2 = new Image();
-      img2.crossOrigin = "anonymous";
-      img2.onload = () => setPhotoUrl(proxyUrl);
-      img2.onerror = () => {
-        // Last resort: use directly without crossOrigin (will work for display but not export)
-        setPhotoUrl(url);
-      };
-      img2.src = proxyUrl;
-    };
-    img.src = url;
-  };
+  if (mime === "image/jpeg") {
+    const xmpPayload = new TextEncoder().encode('http://ns.adobe.com/xap/1.0/\0' + xmpStr);
+    const segLen = xmpPayload.length + 2;
+    const segment = new Uint8Array(4 + xmpPayload.length);
+    segment[0] = 0xFF; segment[1] = 0xE1;
+    segment[2] = (segLen >> 8) & 0xFF; segment[3] = segLen & 0xFF;
+    segment.set(xmpPayload, 4);
+    const result = new Uint8Array(2 + segment.length + arr.length - 2);
+    result.set(arr.subarray(0, 2));
+    result.set(segment, 2);
+    result.set(arr.subarray(2), 2 + segment.length);
+    return URL.createObjectURL(new Blob([result], { type: mime }));
+  } else {
+    const copyright = `© ${year} ${copy}. Blackmagic Design Authorized Reseller`;
+    const key = new TextEncoder().encode('Copyright');
+    const val = new TextEncoder().encode(copyright);
+    const chunkData = new Uint8Array(key.length + 1 + val.length);
+    chunkData.set(key); chunkData[key.length] = 0; chunkData.set(val, key.length + 1);
+    const typeBytes = new Uint8Array([0x74,0x45,0x58,0x74]); // tEXt
+    const crcTable = (() => { const t = []; for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c;}return t;})();
+    const crcInput = new Uint8Array(4 + chunkData.length);
+    crcInput.set(typeBytes); crcInput.set(chunkData, 4);
+    let c = 0xFFFFFFFF; for(let i=0;i<crcInput.length;i++) c=crcTable[(c^crcInput[i])&0xFF]^(c>>>8); c=(c^0xFFFFFFFF)>>>0;
+    const chunk = new Uint8Array(12 + chunkData.length);
+    const dv = new DataView(chunk.buffer);
+    dv.setUint32(0, chunkData.length);
+    chunk.set(typeBytes, 4);
+    chunk.set(chunkData, 8);
+    dv.setUint32(8 + chunkData.length, c);
+    const result = new Uint8Array(arr.length + chunk.length);
+    result.set(arr.subarray(0, arr.length - 12));
+    result.set(chunk, arr.length - 12);
+    result.set(arr.subarray(arr.length - 12), arr.length - 12 + chunk.length);
+    return URL.createObjectURL(new Blob([result], { type: mime }));
+  }
+} catch(e) {
+  console.warn("Metadata injection failed, using raw image:", e);
+  return dataUrl;
+}
+```
 
-  // ── Undo history (cfg only, not text fields)
-  const historyRef = useRef([]);          // stack of past cfg snapshots
-  const isUndoingRef = useRef(false);
+};
 
-  // Push to history whenever cfg changes (skip text fields — they have native undo)
-  const prevCfgRef = useRef(cfg);
-  useEffect(() => {
-    if (isUndoingRef.current) return;
-    const prev = prevCfgRef.current;
-    const curr = cfg;
-    // Only track non-text changes (sliders, toggles, colors)
-    const nonTextKeys = ["photoRatio","showBranding","accentColor","imgScale",
-      "imgOffsetX","imgOffsetY","headSizeScale","bodySizeScale",
-      "textGap","textVAlign","bodyLineHeight","layout","overlayStart","textPadX","showBadge","textAlign","freePos"];
-    const changed = nonTextKeys.some(k => prev[k] !== curr[k]);
-    if (changed) {
-      historyRef.current.push(prev);
-      if (historyRef.current.length > 50) historyRef.current.shift();
-    }
-    prevCfgRef.current = curr;
-  }, [cfg]);
+const download = () => {
+const canvas = exportRef.current?.current;
+if (!canvas) return;
+try {
+const ext = fmt === “jpeg” ? “jpg” : “png”;
+const mime = fmt === “jpeg” ? “image/jpeg” : “image/png”;
+const dataUrl = fmt === “jpeg” ? canvas.toDataURL(mime, 0.95) : canvas.toDataURL(mime);
+const blobUrl = injectMetadata(dataUrl, mime);
+const a = document.createElement(“a”);
+a.download = `bmd-slide${activeSlide+1}-${size.id}.${ext}`;
+a.href = blobUrl; a.click();
+setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch(e){} }, 1000);
+} catch(e) {
+alert(“저장에 실패했습니다. 사진을 다시 업로드해주세요.\n(외부 URL 이미지는 직접 다운로드 후 업로드하면 저장 가능합니다)”);
+}
+};
 
-  // Ctrl+Z: undo cfg when textarea/input is NOT focused
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if (!(e.key === "z" && (e.ctrlKey || e.metaKey))) return;
-      const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return; // let native undo handle it
-      e.preventDefault();
-      if (historyRef.current.length === 0) return;
-      isUndoingRef.current = true;
-      const prev = historyRef.current.pop();
-      setCfg(c => ({ ...c, ...prev }));
-      setTimeout(() => { isUndoingRef.current = false; }, 0);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+const downloadAll = async () => {
+const ext = fmt === “jpeg” ? “jpg” : “png”;
+const mime = fmt === “jpeg” ? “image/jpeg” : “image/png”;
+for (let i = 0; i < slides.length; i++) {
+const s = slides[i];
+await new Promise(resolve => {
+const canvas = document.createElement(“canvas”);
+const loadAndDraw = (imgEl) => {
+drawCanvas(canvas, { …shared, …s }, size, imgEl);
+applyMosaic(canvas, s.blurStrokes);
+const dataUrl = fmt === “jpeg” ? canvas.toDataURL(mime, 0.95) : canvas.toDataURL(mime);
+const blobUrl = injectMetadata(dataUrl, mime);
+setTimeout(() => {
+const a = document.createElement(“a”);
+a.download = `bmd-slide${i+1}-${size.id}.${ext}`;
+a.href = blobUrl; a.click();
+setTimeout(() => { URL.revokeObjectURL(blobUrl); resolve(); }, 400);
+}, 0);
+};
+if (s.photoUrl) {
+const img = new Image();
+img.crossOrigin = “anonymous”;
+img.onload = () => loadAndDraw(img);
+img.onerror = () => loadAndDraw(null);
+img.src = s.photoUrl;
+} else {
+loadAndDraw(null);
+}
+});
+}
+};
 
-  const handleUrlLoad = () => {
-    const url = urlInput.trim();
-    if (!url) return;
-    setUrlError("⏳ 불러오는 중...");
+// ── AI 요약 기능 (Gemini 2.5 Flash) ──
+const handleSummarize = async () => {
+const headText = cfg.headline?.trim() || “”;
+const bodyText = cfg.body?.trim() || “”;
+const inputText = [headText, bodyText].filter(Boolean).join(”\n”);
+if (!inputText || inputText === “본문을 입력하세요.”) {
+alert(“요약할 텍스트를 제목이나 본문에 입력해주세요.”);
+return;
+}
+if (!apiKey) {
+setApiKeyInput(””);
+setShowApiKeyModal(true);
+return;
+}
+setSummarizing(true);
+try {
+const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+const response = await fetch(endpoint, {
+method: “POST”,
+headers: { “Content-Type”: “application/json” },
+body: JSON.stringify({
+contents: [{
+parts: [{
+text: `당신은 Blackmagic Design 제품 마케팅 카피라이터입니다. 아래 텍스트로 인스타그램 카드 이미지용 제목과 본문을 만들어주세요.
 
-    const proxies = [
-      url,
-      `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-      `https://cors-anywhere.herokuapp.com/${url}`,
-    ];
+## 규칙 (반드시 지킬 것)
 
-    let idx = 0;
-    const tryNext = () => {
-      if (idx >= proxies.length) {
-        setUrlError("모든 방법으로 불러오기 실패했습니다.\n→ 이미지를 PC에 저장 후 '파일 업로드' 탭을 이용해 주세요.");
-        return;
-      }
-      const src = proxies[idx++];
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload  = () => { setPhotoUrl(src); setUrlError(""); };
-      img.onerror = () => tryNext();
-      img.src = src;
-    };
+1. 회사명과 제품명은 반드시 영어 원문 그대로 유지 (예: Blackmagic Camera, DaVinci Resolve, Blackmagic Cloud, PYXIS, HyperDeck 등)
+1. 제목: 최대 15자 이내. 임팩트 있고 짧게. 핵심 키워드 중심
+1. 본문: 반드시 정확히 5줄. 각 줄은 20~30자 내외로 간결하게
+1. 핵심 기능과 장점 위주로 요약
+1. 전문적이면서도 친근한 한국어 마케팅 톤
+1. 불필요한 수식어, 반복 제거
+1. 이모지 사용 금지
 
-    tryNext();
-  };
+## 출력 형식 (이 형식을 정확히 따를 것)
 
-  // ── Copyright metadata injection ──
-  const injectMetadata = (dataUrl, mime) => {
-    try {
-      const copy = cfg.company || "하이픽셀플러스";
-      const year = new Date().getFullYear();
-      const xmpStr = [
-        '<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>',
-        '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
-        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
-        '<rdf:Description',
-        ' xmlns:dc="http://purl.org/dc/elements/1.1/"',
-        ' xmlns:xmpRights="http://ns.adobe.com/xap/1.0/rights/"',
-        ' xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">',
-        `<dc:rights><rdf:Alt><rdf:li xml:lang="x-default">© ${year} ${copy}. All rights reserved. Created with BMD 리셀러 이미지 메이커</rdf:li></rdf:Alt></dc:rights>`,
-        `<dc:creator><rdf:Seq><rdf:li>${copy}</rdf:li></rdf:Seq></dc:creator>`,
-        `<xmpRights:Marked>True</xmpRights:Marked>`,
-        `<photoshop:Credit>${copy} - Blackmagic Design Authorized Reseller</photoshop:Credit>`,
-        '</rdf:Description>',
-        '</rdf:RDF>',
-        '</x:xmpmeta>',
-        '<?xpacket end="w"?>',
-      ].join('\n');
-
-      const bin = atob(dataUrl.split(',')[1]);
-      const arr = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-
-      if (mime === "image/jpeg") {
-        const xmpPayload = new TextEncoder().encode('http://ns.adobe.com/xap/1.0/\0' + xmpStr);
-        const segLen = xmpPayload.length + 2;
-        const segment = new Uint8Array(4 + xmpPayload.length);
-        segment[0] = 0xFF; segment[1] = 0xE1;
-        segment[2] = (segLen >> 8) & 0xFF; segment[3] = segLen & 0xFF;
-        segment.set(xmpPayload, 4);
-        const result = new Uint8Array(2 + segment.length + arr.length - 2);
-        result.set(arr.subarray(0, 2));
-        result.set(segment, 2);
-        result.set(arr.subarray(2), 2 + segment.length);
-        return URL.createObjectURL(new Blob([result], { type: mime }));
-      } else {
-        const copyright = `© ${year} ${copy}. Blackmagic Design Authorized Reseller`;
-        const key = new TextEncoder().encode('Copyright');
-        const val = new TextEncoder().encode(copyright);
-        const chunkData = new Uint8Array(key.length + 1 + val.length);
-        chunkData.set(key); chunkData[key.length] = 0; chunkData.set(val, key.length + 1);
-        const typeBytes = new Uint8Array([0x74,0x45,0x58,0x74]); // tEXt
-        const crcTable = (() => { const t = []; for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c;}return t;})();
-        const crcInput = new Uint8Array(4 + chunkData.length);
-        crcInput.set(typeBytes); crcInput.set(chunkData, 4);
-        let c = 0xFFFFFFFF; for(let i=0;i<crcInput.length;i++) c=crcTable[(c^crcInput[i])&0xFF]^(c>>>8); c=(c^0xFFFFFFFF)>>>0;
-        const chunk = new Uint8Array(12 + chunkData.length);
-        const dv = new DataView(chunk.buffer);
-        dv.setUint32(0, chunkData.length);
-        chunk.set(typeBytes, 4);
-        chunk.set(chunkData, 8);
-        dv.setUint32(8 + chunkData.length, c);
-        const result = new Uint8Array(arr.length + chunk.length);
-        result.set(arr.subarray(0, arr.length - 12));
-        result.set(chunk, arr.length - 12);
-        result.set(arr.subarray(arr.length - 12), arr.length - 12 + chunk.length);
-        return URL.createObjectURL(new Blob([result], { type: mime }));
-      }
-    } catch(e) {
-      console.warn("Metadata injection failed, using raw image:", e);
-      return dataUrl;
-    }
-  };
-
-  const download = () => {
-    const canvas = exportRef.current?.current;
-    if (!canvas) return;
-    try {
-      const ext = fmt === "jpeg" ? "jpg" : "png";
-      const mime = fmt === "jpeg" ? "image/jpeg" : "image/png";
-      const dataUrl = fmt === "jpeg" ? canvas.toDataURL(mime, 0.95) : canvas.toDataURL(mime);
-      const blobUrl = injectMetadata(dataUrl, mime);
-      const a = document.createElement("a");
-      a.download = `bmd-slide${activeSlide+1}-${size.id}.${ext}`;
-      a.href = blobUrl; a.click();
-      setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch(e){} }, 1000);
-    } catch(e) {
-      alert("저장에 실패했습니다. 사진을 다시 업로드해주세요.\n(외부 URL 이미지는 직접 다운로드 후 업로드하면 저장 가능합니다)");
-    }
-  };
-
-  const downloadAll = async () => {
-    const ext = fmt === "jpeg" ? "jpg" : "png";
-    const mime = fmt === "jpeg" ? "image/jpeg" : "image/png";
-    for (let i = 0; i < slides.length; i++) {
-      const s = slides[i];
-      await new Promise(resolve => {
-        const canvas = document.createElement("canvas");
-        const loadAndDraw = (imgEl) => {
-          drawCanvas(canvas, { ...shared, ...s }, size, imgEl);
-          applyMosaic(canvas, s.blurStrokes);
-          const dataUrl = fmt === "jpeg" ? canvas.toDataURL(mime, 0.95) : canvas.toDataURL(mime);
-          const blobUrl = injectMetadata(dataUrl, mime);
-          setTimeout(() => {
-            const a = document.createElement("a");
-            a.download = `bmd-slide${i+1}-${size.id}.${ext}`;
-            a.href = blobUrl; a.click();
-            setTimeout(() => { URL.revokeObjectURL(blobUrl); resolve(); }, 400);
-          }, 0);
-        };
-        if (s.photoUrl) {
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          img.onload = () => loadAndDraw(img);
-          img.onerror = () => loadAndDraw(null);
-          img.src = s.photoUrl;
-        } else {
-          loadAndDraw(null);
-        }
-      });
-    }
-  };
-
-  // ── AI 요약 기능 (Gemini 2.5 Flash) ──
-  const handleSummarize = async () => {
-    const bodyText = cfg.body?.trim();
-    if (!bodyText || bodyText === "본문을 입력하세요.") {
-      alert("요약할 본문 텍스트를 먼저 입력해주세요.");
-      return;
-    }
-    if (!apiKey) {
-      setApiKeyInput("");
-      setShowApiKeyModal(true);
-      return;
-    }
-    setSummarizing(true);
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `당신은 Blackmagic Design 제품 마케팅 카피라이터입니다. 아래 텍스트를 인스타그램 카드 이미지용 본문으로 요약해주세요.
-
-## 가이드라인
-1. **회사명과 제품명은 반드시 영어 원문 그대로 유지** (예: Blackmagic Design, DaVinci Resolve, Blackmagic Cloud, PYXIS, HyperDeck 등)
-2. 핵심 기능과 장점 위주로 **3~5줄** 이내로 간결하게 요약
-3. 줄바꿈(\\n)으로 가독성 있게 구분
-4. 마케팅 톤: 전문적이면서도 친근한 한국어
-5. 불필요한 수식어와 반복 제거
-6. 이모지는 사용하지 않음
+[제목] 여기에 제목
+[본문]
+첫째 줄
+둘째 줄
+셋째 줄
+넷째 줄
+다섯째 줄
 
 ## 요약할 텍스트
-${bodyText}
 
-요약 결과만 출력하세요. 다른 설명이나 인사말은 넣지 마세요.`
-            }]
-          }],
-          generationConfig: {
-            maxOutputTokens: 500,
-            temperature: 0.7,
-          }
-        })
-      });
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        if (response.status === 400 || response.status === 403) {
-          alert("API 키가 유효하지 않거나 권한이 없습니다.\n설정에서 다시 입력해주세요.");
-          setApiKey("");
-          try { localStorage.removeItem("bmd_gemini_api_key"); } catch(e) {}
-          setShowApiKeyModal(true);
-          return;
-        }
-        const msg = errData.error?.message || `API 오류 (${response.status})`;
-        throw new Error(msg);
-      }
-      const data = await response.json();
-      const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (result) {
-        setCfg({...cfg, body: result.trim()});
-      } else {
-        alert("요약 결과를 받지 못했습니다. 다시 시도해주세요.");
-      }
-    } catch (err) {
-      console.error("AI 요약 오류:", err);
-      alert("AI 요약 중 오류가 발생했습니다.\n" + err.message);
-    } finally {
-      setSummarizing(false);
-    }
-  };
+${inputText}
 
-  const saveApiKey = () => {
-    const key = apiKeyInput.trim();
-    if (!key.startsWith("AIza")) {
-      alert("올바른 Google Gemini API 키를 입력해주세요.\n(AIza 로 시작합니다)");
-      return;
-    }
-    setApiKey(key);
-    try { localStorage.setItem("bmd_gemini_api_key", key); } catch(e) {}
-    setShowApiKeyModal(false);
-  };
+위 출력 형식대로만 출력하세요. 다른 설명은 넣지 마세요.`}] }], generationConfig: { maxOutputTokens: 1024, temperature: 0.7, thinkingConfig: { thinkingBudget: 0 }, } }) }); if (!response.ok) { const errData = await response.json().catch(() => ({})); if (response.status === 400 || response.status === 403) { alert("API 키가 유효하지 않거나 권한이 없습니다.\n설정에서 다시 입력해주세요."); setApiKey(""); try { localStorage.removeItem("bmd_gemini_api_key"); } catch(e) {} setShowApiKeyModal(true); return; } const msg = errData.error?.message ||`API 오류 (${response.status})`;
+throw new Error(msg);
+}
+const data = await response.json();
+const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
+if (result) {
+const headlineMatch = result.match(/[제목]\s*(.+)/);
+const bodyMatch = result.match(/[본문]\s*\n([\s\S]+)/);
+const newHeadline = headlineMatch ? headlineMatch[1].trim() : “”;
+const newBody = bodyMatch ? bodyMatch[1].trim() : result.trim();
+const patch = { body: newBody };
+if (newHeadline) patch.headline = newHeadline;
+setCfg({…cfg, …patch});
+} else {
+alert(“요약 결과를 받지 못했습니다. 다시 시도해주세요.”);
+}
+} catch (err) {
+console.error(“AI 요약 오류:”, err);
+alert(“AI 요약 중 오류가 발생했습니다.\n” + err.message);
+} finally {
+setSummarizing(false);
+}
+};
 
-  const clearApiKey = () => {
-    setApiKey("");
-    try { localStorage.removeItem("bmd_gemini_api_key"); } catch(e) {}
-    setShowApiKeyModal(false);
-  };
+const saveApiKey = () => {
+const key = apiKeyInput.trim();
+if (!key.startsWith(“AIza”)) {
+alert(“올바른 Google Gemini API 키를 입력해주세요.\n(AIza 로 시작합니다)”);
+return;
+}
+setApiKey(key);
+try { localStorage.setItem(“bmd_gemini_api_key”, key); } catch(e) {}
+setShowApiKeyModal(false);
+};
 
-  const fullCfg = cfg;
-  // Estimate actual canvas height (split mode can be taller than base)
-  const estRatio = cfg.photoRatio ?? 0.60;
-  const estPhotoH = size.h * estRatio;
-  const estTextH = Math.max(size.h * 0.15, size.h - estPhotoH);
-  const estTotalH = cfg.layout === "split" ? estPhotoH + estTextH : size.h;
+const clearApiKey = () => {
+setApiKey(””);
+try { localStorage.removeItem(“bmd_gemini_api_key”); } catch(e) {}
+setShowApiKeyModal(false);
+};
 
-  const previewContainerRef = useRef(null);
-  const [previewScale, setPreviewScale] = useState(0.4);
-  useEffect(() => {
-    const updateScale = () => {
-      const el = previewContainerRef.current;
-      if (!el) return;
-      const pad = 40;
-      const availW = el.clientWidth - pad * 2;
-      const availH = el.clientHeight - pad * 2;
-      setPreviewScale(Math.min(availW / size.w, availH / estTotalH, 1));
-    };
-    updateScale();
-    window.addEventListener("resize", updateScale);
-    return () => window.removeEventListener("resize", updateScale);
-  }, [size, estTotalH]);
+const fullCfg = cfg;
+// Estimate actual canvas height (split mode can be taller than base)
+const estRatio = cfg.photoRatio ?? 0.60;
+const estPhotoH = size.h * estRatio;
+const estTextH = Math.max(size.h * 0.15, size.h - estPhotoH);
+const estTotalH = cfg.layout === “split” ? estPhotoH + estTextH : size.h;
 
-  const inp = (label, key, placeholder, multi) => (
-    <div style={{ marginBottom:18 }}>
-      <div style={{ fontSize:14, color:"#555", fontWeight:600, marginBottom:7 }}>{label}</div>
-      {multi ? (
-        <textarea value={cfg[key]} rows={5} placeholder={placeholder}
-          onChange={e => setCfg({...cfg, [key]:e.target.value})}
+const previewContainerRef = useRef(null);
+const [previewScale, setPreviewScale] = useState(0.4);
+useEffect(() => {
+const updateScale = () => {
+const el = previewContainerRef.current;
+if (!el) return;
+const pad = 40;
+const availW = el.clientWidth - pad * 2;
+const availH = el.clientHeight - pad * 2;
+setPreviewScale(Math.min(availW / size.w, availH / estTotalH, 1));
+};
+updateScale();
+window.addEventListener(“resize”, updateScale);
+return () => window.removeEventListener(“resize”, updateScale);
+}, [size, estTotalH]);
+
+const inp = (label, key, placeholder, multi) => (
+<div style={{ marginBottom:18 }}>
+<div style={{ fontSize:14, color:”#555”, fontWeight:600, marginBottom:7 }}>{label}</div>
+{multi ? (
+<textarea value={cfg[key]} rows={5} placeholder={placeholder}
+onChange={e => setCfg({…cfg, [key]:e.target.value})}
+style={{ width:“100%”, background:”#e8e8e8”, border:“1px solid #d0d0d0”,
+color:”#333”, fontSize:15, padding:“12px 14px”, borderRadius:6,
+fontFamily:“Pretendard, ‘Noto Sans KR’, sans-serif”, outline:“none”, resize:“vertical”, lineHeight:1.7 }} />
+) : (
+<input value={cfg[key]} placeholder={placeholder}
+onChange={e => setCfg({…cfg, [key]:e.target.value})}
+style={{ width:“100%”, background:”#e8e8e8”, border:“1px solid #d0d0d0”,
+color:”#333”, fontSize:15, padding:“12px 14px”, borderRadius:6, outline:“none” }} />
+)}
+</div>
+);
+
+const sectionLabel = (t) => (
+<div style={{ fontSize:13, color:”#777”, fontWeight:700, letterSpacing:“0.06em”,
+marginBottom:10, marginTop:22 }}>{t}</div>
+);
+
+return (
+<div style={{ height:“100vh”, background:”#f2f2f2”, color:”#111”,
+fontFamily:“Pretendard, ‘Noto Sans KR’, sans-serif”, display:“flex”, flexDirection:“column” }}>
+
+```
+  {/* Header */}
+  <div style={{ height:56, background:"#ffffff", borderBottom:"1px solid #e0e0e0",
+    display:"flex", alignItems:"center", padding:"0 24px", gap:12, flexShrink:0 }}>
+    <div style={{ width:7, height:7, background:"#111", borderRadius:"50%" }}/>
+    <span style={{ fontWeight:800, fontSize:14, letterSpacing:"0.12em" }}>BLACKMAGIC DESIGN</span>
+    <span style={{ color:"#ccc", fontSize:16 }}>|</span>
+    <span style={{ fontSize:14, color:"#888" }}>리셀러 이미지 메이커</span>
+    <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:12 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        {resellerLogo && (
+          <img src={resellerLogo} alt={resellerName}
+            style={{ maxHeight:28, maxWidth:100, objectFit:"contain" }}/>
+        )}
+        <span style={{ fontSize:13, color:"#555", fontWeight:600 }}>{resellerName}</span>
+      </div>
+      <button onClick={handleLogout}
+        style={{ fontSize:12, color:"#999", background:"#f0f0f0", border:"1px solid #ddd",
+          padding:"5px 12px", borderRadius:4, cursor:"pointer" }}>
+        로그아웃
+      </button>
+    </div>
+  </div>
+
+  {/* ── Slide Tab Bar ── */}
+  <div style={{ background:"#fff", borderBottom:"1px solid #e0e0e0",
+    padding:"0 20px", display:"flex", alignItems:"center", gap:8,
+    overflowX:"auto", WebkitOverflowScrolling:"touch", flexShrink:0, height:52 }}>
+    {slides.map((s, i) => (
+      <div key={s.id} style={{ display:"flex", alignItems:"center", gap:2, flexShrink:0 }}>
+        <button onClick={() => setActiveSlide(i)}
+          style={{
+            padding:"0 18px", height:38, borderRadius:6, fontSize:14, cursor:"pointer",
+            fontWeight: activeSlide===i ? 700 : 400,
+            background: activeSlide===i ? "#111" : "#f0f0f0",
+            color: activeSlide===i ? "#fff" : "#888",
+            border: "none",
+            display:"flex", alignItems:"center", gap:8,
+          }}>
+          {s.photoUrl
+            ? <img src={s.photoUrl} style={{ width:20, height:20, objectFit:"cover", borderRadius:3 }}/>
+            : <span style={{ fontSize:14 }}>📷</span>}
+          슬라이드 {i+1}
+        </button>
+        {slides.length > 1 && (
+          <button onClick={() => deleteSlide(i)}
+            style={{ width:24, height:24, borderRadius:"50%", border:"none",
+              background:"transparent", color:"#bbb", fontSize:16,
+              cursor:"pointer", padding:0, lineHeight:1,
+              display:"flex", alignItems:"center", justifyContent:"center" }}>
+            ×
+          </button>
+        )}
+      </div>
+    ))}
+    <button onClick={addSlide}
+      style={{ padding:"0 16px", height:38, borderRadius:6, fontSize:14,
+        background:"transparent", border:"2px dashed #ccc", color:"#aaa",
+        cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", gap:6 }}>
+      + 추가
+    </button>
+    <button onClick={duplicateSlide}
+      style={{ padding:"0 16px", height:38, borderRadius:6, fontSize:14,
+        background:"transparent", border:"2px dashed #ccc", color:"#aaa",
+        cursor:"pointer", flexShrink:0 }}>
+      복사
+    </button>
+  </div>
+
+  <div style={{ display:"flex", flex:1, minHeight:0, overflow:"hidden" }}>
+
+    {/* ── LEFT PANEL ── */}
+    <div style={{ width:340, borderRight:"1px solid #e0e0e0",
+      overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"20px 22px", flexShrink:0, background:"#fafafa" }}>
+
+      {/* Slide indicator */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+        marginBottom:16, paddingBottom:12, borderBottom:"1px solid #e8e8e8" }}>
+        <span style={{ fontSize:16, fontWeight:700, color:"#333" }}>
+          슬라이드 {activeSlide+1} / {slides.length}
+        </span>
+        <div style={{ display:"flex", gap:6 }}>
+          <button onClick={duplicateSlide}
+            style={{ fontSize:13, color:"#888", background:"#f0f0f0", border:"1px solid #e0e0e0",
+              padding:"6px 14px", borderRadius:5, cursor:"pointer" }}>
+            복사
+          </button>
+          {slides.length > 1 && (
+            <button onClick={() => deleteSlide(activeSlide)}
+              style={{ fontSize:13, color:"#e05555", background:"#fff0f0", border:"1px solid #ffcccc",
+                padding:"6px 14px", borderRadius:5, cursor:"pointer" }}>
+              삭제
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Layout mode toggle */}
+      <div style={{ display:"flex", gap:6, marginBottom:16 }}>
+        {[{id:"split",label:"📐 사진+글 나누기"},{id:"overlay",label:"🖼️ 사진 위에 글쓰기"}].map(m => (
+          <button key={m.id} onClick={() => setCfg({...cfg, layout:m.id})}
+            style={{ flex:1, padding:"12px 0", borderRadius:8, fontSize:14, cursor:"pointer",
+              fontWeight: cfg.layout===m.id ? 700 : 400,
+              background: cfg.layout===m.id ? "#111" : "#fff",
+              border: cfg.layout===m.id ? "2px solid #111" : "2px solid #d8d8d8",
+              color: cfg.layout===m.id ? "#fff" : "#888" }}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 📷 사진 */}
+      {sectionLabel("📷 사진")}
+      <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+        <button onClick={() => fileRef.current?.click()}
+          style={{ flex:1, padding:"12px 0", borderRadius:6, fontSize:14, fontWeight:600,
+            cursor:"pointer", background:"#222", color:"#fff", border:"none" }}>
+          📁 사진 선택
+        </button>
+        <button onClick={async () => {
+            try {
+              const items = await navigator.clipboard.read();
+              for (const item of items) {
+                const imageType = item.types.find(t => t.startsWith("image/"));
+                if (imageType) {
+                  const blob = await item.getType(imageType);
+                  const r = new FileReader();
+                  r.onload = ev => setPhotoUrl(ev.target.result);
+                  r.readAsDataURL(blob);
+                  return;
+                }
+              }
+              alert("복사된 이미지가 없습니다.\n이미지를 먼저 복사해주세요.");
+            } catch(e) {
+              alert("붙여넣기 권한이 필요합니다.\n브라우저에서 허용해주세요.");
+            }
+          }}
+          style={{ flex:1, padding:"12px 0", borderRadius:6, fontSize:14, fontWeight:600,
+            cursor:"pointer", background:"#fff", color:"#222", border:"2px solid #222" }}>
+          📋 붙여넣기
+        </button>
+      </div>
+      {photoUrl ? (
+        <div onClick={() => fileRef.current?.click()}
+          style={{ borderRadius:8, overflow:"hidden", cursor:"pointer", position:"relative", marginBottom:10 }}>
+          <img src={photoUrl} style={{ width:"100%", height:160, objectFit:"cover", display:"block" }}/>
+          <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.6)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            opacity:0, transition:"0.15s", fontSize:15, color:"#fff", fontWeight:600 }}
+            onMouseEnter={e=>e.currentTarget.style.opacity=1}
+            onMouseLeave={e=>e.currentTarget.style.opacity=0}>✏️ 사진 교체</div>
+        </div>
+      ) : (
+        <div onClick={() => fileRef.current?.click()}
+          style={{ border:"2px dashed #ccc", borderRadius:8, background:"#ebebeb",
+            cursor:"pointer", padding:"24px 0", textAlign:"center", marginBottom:10 }}>
+          <div style={{ fontSize:32, marginBottom:6 }}>📷</div>
+          <div style={{ fontSize:14, color:"#888" }}>또는 여기를 눌러 사진 선택</div>
+        </div>
+      )}
+      <input ref={fileRef} type="file" accept="image/*"
+        style={{ display:"none" }} onChange={handleFile}/>
+      {photoUrl && (
+        <button onClick={() => { setPhotoUrl(null); setUrlInput(""); setUrlError(""); }}
+          style={{ width:"100%", background:"transparent", border:"1px solid #d4d4d4",
+            color:"#999", padding:"8px 0", borderRadius:5, fontSize:13,
+            cursor:"pointer", marginBottom:12 }}>
+          ✕ 사진 제거
+        </button>
+      )}
+
+      {/* ✏️ 텍스트 */}
+      {sectionLabel("✏️ 텍스트")}
+      
+      {/* 큰 제목 + AI 요약 */}
+      <div style={{ marginBottom:18 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
+          <div style={{ fontSize:14, color:"#555", fontWeight:600 }}>큰 제목 (엔터로 줄바꿈)</div>
+          <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+            <button onClick={handleSummarize} disabled={summarizing}
+              style={{ fontSize:13, fontWeight:700, padding:"4px 12px", borderRadius:5,
+                cursor: summarizing ? "default" : "pointer",
+                border: "1.5px solid #333",
+                background: summarizing ? "#e0e0e0" : "#fff",
+                color: summarizing ? "#999" : "#333",
+                transition:"all 0.2s" }}>
+              {summarizing ? "요약 중..." : "+AI 요약"}
+            </button>
+            <button onClick={() => { setApiKeyInput(apiKey); setShowApiKeyModal(true); }}
+              title="API 키 설정"
+              style={{ width:26, height:26, borderRadius:5, border:"1px solid #d0d0d0",
+                background: apiKey ? "#f0fdf4" : "#fff8f0", cursor:"pointer",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:13, padding:0 }}>
+              {apiKey ? "🔑" : "⚙️"}
+            </button>
+          </div>
+        </div>
+        <textarea value={cfg.headline} rows={2} placeholder="제목과 본문을 입력하고 ✨AI 요약을 누르세요"
+          onChange={e => setCfg({...cfg, headline:e.target.value})}
           style={{ width:"100%", background:"#e8e8e8", border:"1px solid #d0d0d0",
             color:"#333", fontSize:15, padding:"12px 14px", borderRadius:6,
             fontFamily:"Pretendard, 'Noto Sans KR', sans-serif", outline:"none", resize:"vertical", lineHeight:1.7 }} />
-      ) : (
-        <input value={cfg[key]} placeholder={placeholder}
-          onChange={e => setCfg({...cfg, [key]:e.target.value})}
-          style={{ width:"100%", background:"#e8e8e8", border:"1px solid #d0d0d0",
-            color:"#333", fontSize:15, padding:"12px 14px", borderRadius:6, outline:"none" }} />
-      )}
+        {!apiKey && (
+          <div style={{ fontSize:11, color:"#16a34a", marginTop:4 }}>
+            ⚙️ Gemini API 키 설정 (무료)
+          </div>
+        )}
+      </div>
+
+      {/* 본문 */}
+      {inp("본문 (엔터로 줄바꿈)", "body", "설명 텍스트...", true)}
+
+      {/* 띠 문구 / 작은 제목 체크박스 */}
+      <div style={{ marginBottom:18 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8, cursor:"pointer" }}
+          onClick={() => {
+            const turning_on = !cfg.showBadge;
+            const patch = { showBadge: turning_on };
+            if (turning_on && !cfg.badge?.trim()) {
+              patch.badge = cfg.layout === "overlay" ? "DaVinci Resolve" : "NEW ARRIVAL";
+            }
+            setCfg({...cfg, ...patch});
+          }}>
+          <div style={{ width:22, height:22, borderRadius:4, border:"2px solid #bbb",
+            background: cfg.showBadge ? "#222" : "#fff",
+            display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            {cfg.showBadge && <span style={{ color:"#fff", fontSize:14, fontWeight:700 }}>✓</span>}
+          </div>
+          <span style={{ fontSize:14, color:"#555", fontWeight:600 }}>
+            {cfg.layout === "overlay" ? "작은 제목 추가" : "띠 문구 추가"}
+          </span>
+        </div>
+        {cfg.showBadge && (
+          <input value={cfg.badge} placeholder={cfg.layout === "overlay" ? "DaVinci Resolve" : "NEW ARRIVAL"}
+            onChange={e => setCfg({...cfg, badge:e.target.value})}
+            style={{ width:"100%", background:"#e8e8e8", border:"1px solid #d0d0d0",
+              color:"#333", fontSize:15, padding:"12px 14px", borderRadius:6, outline:"none" }} />
+        )}
+      </div>
+
+      {inp("회사명", "company", "하이픽셀플러스")}
+
+      {/* 🎨 스타일 */}
+      {sectionLabel("🎨 스타일")}
+      <div style={{ fontSize:13, color:"#888", marginBottom:8 }}>강조 색상 (큰 제목)</div>
+      <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap", position:"relative" }}>
+        {ACCENTS.map(a => (
+          <button key={a.id} onClick={() => setCfg({...cfg, accentColor:a.hex})} title={a.label}
+            style={{ width:36, height:36, borderRadius:"50%", background:a.hex, cursor:"pointer",
+              border: cfg.accentColor===a.hex?"3px solid #222":"3px solid transparent",
+              outline: cfg.accentColor===a.hex?"2px solid #aaa":"none", outlineOffset:2 }}/>
+        ))}
+        {customColors.map((hex, i) => (
+          <div key={`custom-${i}`} style={{ position:"relative" }}>
+            <button onClick={() => setCfg({...cfg, accentColor:hex})} title={hex}
+              style={{ width:36, height:36, borderRadius:"50%", background:hex, cursor:"pointer",
+                border: cfg.accentColor===hex?"3px solid #222":"3px solid transparent",
+                outline: cfg.accentColor===hex?"2px solid #aaa":"none", outlineOffset:2 }}/>
+            <button onClick={() => {
+                const next = customColors.filter((_, j) => j !== i);
+                setCustomColors(next);
+                if (cfg.accentColor === hex) setCfg({...cfg, accentColor:"#ffffff"});
+              }}
+              style={{ position:"absolute", top:-6, right:-6, width:18, height:18,
+                borderRadius:"50%", background:"#555", color:"#fff", border:"none",
+                fontSize:11, lineHeight:1, cursor:"pointer", display:"flex",
+                alignItems:"center", justifyContent:"center", padding:0 }}>×</button>
+          </div>
+        ))}
+        <button onClick={() => { colorPickerRef.current?.click(); }}
+          title="커스텀 색상 추가"
+          style={{ width:36, height:36, borderRadius:"50%", cursor:"pointer",
+            border:"2px dashed #bbb", background:"transparent",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:20, color:"#aaa", lineHeight:1 }}>+</button>
+        <input ref={colorPickerRef} type="color" value={cfg.accentColor}
+          style={{ position:"absolute", left:0, bottom:-10, opacity:0, width:36, height:1, pointerEvents:"none" }}
+          onChange={e => {
+            setCfg({...cfg, accentColor: e.target.value});
+          }}
+          onBlur={e => {
+            const hex = e.target.value;
+            const allColors = [...ACCENTS.map(a => a.hex), ...customColors];
+            if (!allColors.includes(hex)) setCustomColors(prev => [...prev, hex]);
+          }}/>
+      </div>
+
+      <div style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer", marginBottom:14 }}
+        onClick={() => setCfg({...cfg, showBranding:!cfg.showBranding})}>
+        <div style={{ width:48, height:26, borderRadius:13, position:"relative",
+          background: cfg.showBranding?"#222":"#ccc", transition:"0.2s" }}>
+          <div style={{ width:20, height:20, borderRadius:"50%", background:"#fff",
+            position:"absolute", top:3, left:cfg.showBranding?25:3, transition:"0.2s" }}/>
+        </div>
+        <span style={{ fontSize:14, color:"#555" }}>브랜딩 하단바 {cfg.showBranding?"ON":"OFF"}</span>
+      </div>
     </div>
-  );
 
-  const sectionLabel = (t) => (
-    <div style={{ fontSize:13, color:"#777", fontWeight:700, letterSpacing:"0.06em",
-      marginBottom:10, marginTop:22 }}>{t}</div>
-  );
+    {/* ── CENTER: Preview + Controls ── */}
+    <div style={{ flex:1, display:"flex", flexDirection:"column",
+      background:"#f2f2f2", minWidth:0 }}>
 
-  return (
-    <div style={{ height:"100vh", background:"#f2f2f2", color:"#111",
-      fontFamily:"Pretendard, 'Noto Sans KR', sans-serif", display:"flex", flexDirection:"column" }}>
+      {/* Top toolbar */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:14,
+        flexWrap:"wrap", padding:"12px 24px 0", flexShrink:0 }}>
+        <div style={{ display:"flex", gap:6 }}>
+          <div style={{ padding:"8px 16px", borderRadius:5, fontSize:14, fontWeight:700,
+            background:"#111", color:"#fff", border:"1px solid #222" }}>
+            카드 4:5
+          </div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <button onClick={() => { setBlurMode(!blurMode); if (!blurMode) setCfg({...cfg, freePos:false}); }}
+            style={{ padding:"8px 16px", borderRadius:6, fontSize:13, fontWeight:700,
+              cursor:"pointer", border: blurMode ? "2px solid #e05555" : "2px solid #ccc",
+              background: blurMode ? "#fff0f0" : "#fff",
+              color: blurMode ? "#e05555" : "#888" }}>
+            {blurMode ? "🔴 흐리게 켜짐" : "🟡 흐리게"}
+          </button>
+          {blurMode && (<>
+            <div style={{ display:"flex", alignItems:"center", gap:6, background:"#f8f8f8",
+              border:"1px solid #ddd", borderRadius:6, padding:"4px 10px" }}>
+              <span style={{ fontSize:12, color:"#888" }}>크기</span>
+              <input type="range" min="1" max="100" step="1" value={brushSize}
+                onChange={e => setBrushSize(parseInt(e.target.value))}
+                style={{ width:80, accentColor:"#e05555" }}/>
+              <span style={{ fontSize:12, color:"#666", minWidth:30 }}>{brushSize}</span>
+            </div>
+            {(slide.blurStrokes||[]).length > 0 && (
+              <button onClick={() => updateSlide({ blurStrokes: [] })}
+                style={{ padding:"6px 12px", borderRadius:5, fontSize:12, fontWeight:600,
+                  cursor:"pointer", border:"1px solid #ddd", background:"#fff", color:"#888" }}>
+                흐리게 지우기
+              </button>
+            )}
+          </>)}
+          <button onClick={() => {
+              if (!cfg.freePos) {
+                if (!slide.headPos) updateSlide({ headPos: {x:0.5, y:0.5} });
+                if (!slide.bodyPos) updateSlide({ bodyPos: {x:0.5, y:0.7} });
+              }
+              setCfg({...cfg, freePos: !cfg.freePos});
+              if (blurMode) setBlurMode(false);
+            }}
+            style={{ padding:"8px 16px", borderRadius:6, fontSize:13, fontWeight:700,
+              cursor:"pointer", border: cfg.freePos ? "2px solid #3b82f6" : "2px solid #ccc",
+              background: cfg.freePos ? "#eff6ff" : "#fff",
+              color: cfg.freePos ? "#3b82f6" : "#888" }}>
+            {cfg.freePos ? "🔵 자유 배치 ON" : "✋ 자유 배치"}
+          </button>
+          {cfg.freePos && (
+            <button onClick={() => updateSlide({ headPos: null, bodyPos: null })}
+              style={{ padding:"6px 12px", borderRadius:5, fontSize:12, fontWeight:600,
+                cursor:"pointer", border:"1px solid #ddd", background:"#fff", color:"#888" }}>
+              위치 초기화
+            </button>
+          )}
+          <span style={{ fontSize:12, color:"#999", fontWeight:600, padding:"6px 10px",
+            background:"#f0f0f0", borderRadius:5 }}>PNG</span>
+          <button onClick={download}
+            style={{ background:"#111", color:"#fff", border:"none",
+              padding:"10px 24px", borderRadius:6, fontWeight:800,
+              fontSize:15, cursor:"pointer",
+              boxShadow:"0 2px 10px rgba(0,0,0,0.25)" }}>
+            ↓ 저장하기
+          </button>
+          {slides.length > 1 && (
+            <button onClick={downloadAll}
+              style={{ background:"#fff", color:"#111", border:"2px solid #111",
+                padding:"8px 20px", borderRadius:6, fontWeight:800, fontSize:14, cursor:"pointer" }}>
+              ↓ 전체 {slides.length}장
+            </button>
+          )}
+        </div>
+      </div>
 
-      {/* Header */}
-      <div style={{ height:56, background:"#ffffff", borderBottom:"1px solid #e0e0e0",
-        display:"flex", alignItems:"center", padding:"0 24px", gap:12, flexShrink:0 }}>
-        <div style={{ width:7, height:7, background:"#111", borderRadius:"50%" }}/>
-        <span style={{ fontWeight:800, fontSize:14, letterSpacing:"0.12em" }}>BLACKMAGIC DESIGN</span>
-        <span style={{ color:"#ccc", fontSize:16 }}>|</span>
-        <span style={{ fontSize:14, color:"#888" }}>리셀러 이미지 메이커</span>
-        <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:12 }}>
-          <span style={{ fontSize:13, color:"#555", fontWeight:600 }}>👤 {resellerName}</span>
-          <button onClick={handleLogout}
-            style={{ fontSize:12, color:"#999", background:"#f0f0f0", border:"1px solid #ddd",
-              padding:"5px 12px", borderRadius:4, cursor:"pointer" }}>
-            로그아웃
+      {/* Canvas preview */}
+      <div ref={previewContainerRef} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center",
+        justifyContent:"center", padding:"12px 28px", gap:6, minHeight:0 }}>
+        <div style={{ position:"relative" }}>
+          <div ref={dragAreaRef}
+            onMouseDown={onDragStart} onMouseMove={onDragMove}
+            onMouseUp={onDragEnd} onMouseLeave={onDragEnd}
+            onTouchStart={onDragStart} onTouchMove={onDragMove}
+            onTouchEnd={onDragEnd} onTouchCancel={onDragEnd}
+            style={{ boxShadow:"0 0 0 1px #ddd, 0 8px 32px rgba(0,0,0,0.15)",
+              borderRadius:5, overflow:"hidden",
+              cursor: blurMode ? "crosshair" : cfg.freePos ? "move" : (photoUrl ? (isDragging ? "grabbing" : "grab") : "default"),
+              userSelect:"none", touchAction:"none" }}>
+            <CanvasPreview config={fullCfg} size={size} scale={previewScale} exportRef={exportRef}/>
+          </div>
+          {(photoUrl || blurMode || cfg.freePos) && (
+            <div style={{ position:"absolute", bottom:-24, left:0, right:0,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:12, color: blurMode ? "#e05555" : cfg.freePos ? "#3b82f6" : "#999", pointerEvents:"none" }}>
+              <span>{blurMode ? "🖌️ 드래그로 흐리게 칠하기" : cfg.freePos ? "✋ 제목/본문을 드래그로 이동" : "🖱️ 드래그로 위치 조정"}</span>
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize:12, color:"#bbb" }}>{size.w} × {Math.round(estTotalH)}px</div>
+      </div>
+
+      {/* ── Bottom slider panel removed, moved to right ── */}
+    </div>
+
+    {/* ── RIGHT PANEL: Adjustments ── */}
+    <div style={{ width:260, borderLeft:"1px solid #e0e0e0", overflowY:"auto",
+      WebkitOverflowScrolling:"touch", flexShrink:0, background:"#f5f5f5" }}>
+
+      {photoUrl && (<React.Fragment>
+        <div onClick={() => setCollapsed(c=>({...c, photo:!c.photo}))}
+          style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+            padding:"14px 18px 10px", cursor:"pointer", userSelect:"none" }}>
+          <span style={{ fontSize:14, fontWeight:800, color:"#222" }}>사진 조정</span>
+          <span style={{ fontSize:12, color:"#aaa" }}>{collapsed.photo ? "∨" : "∧"}</span>
+        </div>
+        {!collapsed.photo && (
+          <div style={{ padding:"0 18px 14px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+              <span style={{ fontSize:12, color:"#666", minWidth:32 }}>크기</span>
+              <input type="range" min="1" max="3" step="0.01" value={cfg.imgScale}
+                onChange={e => setCfg({...cfg, imgScale:parseFloat(e.target.value)})}
+                style={{ flex:1, accentColor:"#333" }}/>
+              <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.imgScale*100)}%</span>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+              <span style={{ fontSize:12, color:"#666", minWidth:32 }}>좌우</span>
+              <input type="range" min="-1" max="1" step="0.01" value={cfg.imgOffsetX}
+                onChange={e => setCfg({...cfg, imgOffsetX:parseFloat(e.target.value)})}
+                style={{ flex:1, accentColor:"#333" }}/>
+              <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.imgOffsetX*100)}%</span>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontSize:12, color:"#666", minWidth:32 }}>상하</span>
+              <input type="range" min="-1" max="1" step="0.01" value={cfg.imgOffsetY}
+                onChange={e => setCfg({...cfg, imgOffsetY:parseFloat(e.target.value)})}
+                style={{ flex:1, accentColor:"#333" }}/>
+              <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.imgOffsetY*100)}%</span>
+            </div>
+          </div>
+        )}
+        <div style={{ height:1, background:"#e0e0e0" }}/>
+      </React.Fragment>)}
+
+      <div onClick={() => setCollapsed(c=>({...c, font:!c.font}))}
+        style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+          padding:"14px 18px 10px", cursor:"pointer", userSelect:"none" }}>
+        <span style={{ fontSize:14, fontWeight:800, color:"#222" }}>글자 크기</span>
+        <span style={{ fontSize:12, color:"#aaa" }}>{collapsed.font ? "∨" : "∧"}</span>
+      </div>
+      {!collapsed.font && (
+        <div style={{ padding:"0 18px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+            <span style={{ fontSize:12, color:"#666", minWidth:42 }}>제목</span>
+            <input type="range" min="0.5" max="2" step="0.05" value={cfg.headSizeScale}
+              onChange={e => setCfg({...cfg, headSizeScale:parseFloat(e.target.value)})}
+              style={{ flex:1, accentColor:"#333" }}/>
+            <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.headSizeScale*100)}%</span>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+            <span style={{ fontSize:12, color:"#666", minWidth:42 }}>본문</span>
+            <input type="range" min="0.5" max="2" step="0.05" value={cfg.bodySizeScale}
+              onChange={e => setCfg({...cfg, bodySizeScale:parseFloat(e.target.value)})}
+              style={{ flex:1, accentColor:"#333" }}/>
+            <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.bodySizeScale*100)}%</span>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontSize:12, color:"#666", minWidth:42 }}>줄 간격</span>
+            <input type="range" min="0.8" max="2.5" step="0.05" value={cfg.bodyLineHeight}
+              onChange={e => setCfg({...cfg, bodyLineHeight:parseFloat(e.target.value)})}
+              style={{ flex:1, accentColor:"#333" }}/>
+            <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{cfg.bodyLineHeight.toFixed(1)}</span>
+          </div>
+        </div>
+      )}
+      <div style={{ height:1, background:"#e0e0e0" }}/>
+
+      <div onClick={() => setCollapsed(c=>({...c, pos:!c.pos}))}
+        style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+          padding:"14px 18px 10px", cursor:"pointer", userSelect:"none" }}>
+        <span style={{ fontSize:14, fontWeight:800, color:"#222" }}>위치 / 여백</span>
+        <span style={{ fontSize:12, color:"#aaa" }}>{collapsed.pos ? "∨" : "∧"}</span>
+      </div>
+      {!collapsed.pos && (
+        <div style={{ padding:"0 18px 14px" }}>
+          <div style={{ display:"flex", gap:4, marginBottom:10 }}>
+            {[{id:"left",label:"왼쪽"},{id:"center",label:"가운데"},{id:"right",label:"오른쪽"}].map(a => (
+              <button key={a.id} onClick={() => setCfg({...cfg, textAlign:a.id})}
+                style={{ flex:1, padding:"7px 0", borderRadius:5, fontSize:12, fontWeight:700,
+                  cursor:"pointer", border: cfg.textAlign===a.id ? "2px solid #222" : "2px solid #d8d8d8",
+                  background: cfg.textAlign===a.id ? "#fff" : "#f0f0f0",
+                  color: cfg.textAlign===a.id ? "#222" : "#999" }}>
+                {a.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+            <span style={{ fontSize:12, color:"#666", minWidth:50 }}>제목↔</span>
+            <input type="range" min="0" max="4" step="0.1" value={cfg.textGap}
+              onChange={e => setCfg({...cfg, textGap:parseFloat(e.target.value)})}
+              style={{ flex:1, accentColor:"#333" }}/>
+            <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.textGap*100)}%</span>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+            <span style={{ fontSize:12, color:"#666", minWidth:50 }}>위아래</span>
+            <input type="range" min="-1" max="1" step="0.05" value={cfg.textVAlign}
+              onChange={e => setCfg({...cfg, textVAlign:parseFloat(e.target.value)})}
+              style={{ flex:1, accentColor:"#333" }}/>
+            <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.textVAlign*100)}%</span>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontSize:12, color:"#666", minWidth:50 }}>좌우 여백</span>
+            <input type="range" min="0.02" max="0.25" step="0.01" value={cfg.textPadX}
+              onChange={e => setCfg({...cfg, textPadX:parseFloat(e.target.value)})}
+              style={{ flex:1, accentColor:"#333" }}/>
+            <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.textPadX*100)}%</span>
+          </div>
+        </div>
+      )}
+      <div style={{ height:1, background:"#e0e0e0" }}/>
+
+      <div onClick={() => setCollapsed(c=>({...c, layout:!c.layout}))}
+        style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+          padding:"14px 18px 10px", cursor:"pointer", userSelect:"none" }}>
+        <span style={{ fontSize:14, fontWeight:800, color:"#222" }}>배치</span>
+        <span style={{ fontSize:12, color:"#aaa" }}>{collapsed.layout ? "∨" : "∧"}</span>
+      </div>
+      {!collapsed.layout && (
+        <div style={{ padding:"0 18px 14px" }}>
+          {cfg.layout === "split" && (
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+              <span style={{ fontSize:12, color:"#666", minWidth:50 }}>사진 크기</span>
+              <input type="range" min="0.30" max="1.00" step="0.01" value={cfg.photoRatio}
+                onChange={e => {
+                  const v = parseFloat(e.target.value);
+                  setCfg({...cfg, photoRatio: v >= 0.85 ? 1.00 : v});
+                }}
+                style={{ flex:1, accentColor:"#333" }}/>
+              <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.photoRatio*100)}%</span>
+            </div>
+          )}
+          {cfg.layout === "overlay" && (
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+              <span style={{ fontSize:12, color:"#666", minWidth:50 }}>어두움</span>
+              <input type="range" min="0.1" max="0.7" step="0.05" value={cfg.overlayStart}
+                onChange={e => setCfg({...cfg, overlayStart:parseFloat(e.target.value)})}
+                style={{ flex:1, accentColor:"#333" }}/>
+              <span style={{ fontSize:12, color:"#444", minWidth:36, textAlign:"right" }}>{Math.round(cfg.overlayStart*100)}%</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ padding:"10px 18px 20px" }}>
+        <button onClick={() => setCfg({...cfg, imgOffsetX:0, imgOffsetY:0, imgScale:1, headSizeScale:1, bodySizeScale:1, textGap:1, textVAlign:0, bodyLineHeight:1, overlayStart:0.35, textPadX:0.08, photoRatio:0.60, textAlign:"center"})}
+          style={{ width:"100%", background:"#fff", border:"1px solid #d4d4d4",
+            color:"#666", padding:"10px 0", borderRadius:6, fontSize:13, fontWeight:600, cursor:"pointer" }}>
+          초기화
+        </button>
+      </div>
+    </div>
+  </div>
+  {/* ── API Key Modal ── */}
+  {showApiKeyModal && (
+    <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.5)",
+      display:"flex", alignItems:"center", justifyContent:"center" }}
+      onClick={(e) => { if (e.target === e.currentTarget) setShowApiKeyModal(false); }}>
+      <div style={{ width:440, background:"#fff", borderRadius:16, padding:"36px 32px",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ fontSize:18, fontWeight:800, color:"#333", marginBottom:6 }}>
+          ✨ AI 요약 — API 키 설정
+        </div>
+        <div style={{ fontSize:13, color:"#888", marginBottom:20, lineHeight:1.7 }}>
+          Google Gemini API 키를 입력하면 제품 설명을<br/>
+          인스타그램 카드용 본문으로 자동 요약할 수 있습니다.<br/>
+          <span style={{ color:"#16a34a", fontWeight:600 }}>무료 티어로 하루 1,000건까지 사용 가능합니다.</span>
+        </div>
+        <div style={{ fontSize:12, color:"#666", marginBottom:8, fontWeight:600 }}>Google Gemini API Key</div>
+        <input value={apiKeyInput}
+          onChange={e => setApiKeyInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && saveApiKey()}
+          placeholder="AIza..."
+          type="password"
+          style={{ width:"100%", padding:"14px 16px", fontSize:14, borderRadius:8,
+            border:"2px solid #ddd", outline:"none", marginBottom:12,
+            fontFamily:"monospace" }}/>
+        <div style={{ fontSize:11, color:"#aaa", marginBottom:20, lineHeight:1.6 }}>
+          키는 이 브라우저의 localStorage에만 저장됩니다.<br/>
+          <a href="https://aistudio.google.com/apikey" target="_blank"
+            style={{ color:"#6366f1" }}>Google AI Studio</a>에서 무료로 발급받을 수 있습니다.
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={saveApiKey}
+            style={{ flex:1, padding:"14px 0", borderRadius:8, border:"none",
+              background:"#111", color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer" }}>
+            저장
+          </button>
+          {apiKey && (
+            <button onClick={clearApiKey}
+              style={{ padding:"14px 20px", borderRadius:8, border:"1px solid #ffcccc",
+                background:"#fff0f0", color:"#e05555", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+              삭제
+            </button>
+          )}
+          <button onClick={() => setShowApiKeyModal(false)}
+            style={{ padding:"14px 20px", borderRadius:8, border:"1px solid #ddd",
+              background:"#f5f5f5", color:"#888", fontSize:14, cursor:"pointer" }}>
+            닫기
           </button>
         </div>
       </div>
-
-      {/* ── Slide Tab Bar ── */}
-      <div style={{ background:"#fff", borderBottom:"1px solid #e0e0e0",
-        padding:"0 20px", display:"flex", alignItems:"center", gap:8,
-        overflowX:"auto", WebkitOverflowScrolling:"touch", flexShrink:0, height:52 }}>
-        {slides.map((s, i) => (
-          <div key={s.id} style={{ display:"flex", alignItems:"center", gap:2, flexShrink:0 }}>
-            <button onClick={() => setActiveSlide(i)}
-              style={{
-                padding:"0 18px", height:38, borderRadius:6, fontSize:14, cursor:"pointer",
-                fontWeight: activeSlide===i ? 700 : 400,
-                background: activeSlide===i ? "#111" : "#f0f0f0",
-                color: activeSlide===i ? "#fff" : "#888",
-                border: "none",
-                display:"flex", alignItems:"center", gap:8,
-              }}>
-              {s.photoUrl
-                ? <img src={s.photoUrl} style={{ width:20, height:20, objectFit:"cover", borderRadius:3 }}/>
-                : <span style={{ fontSize:14 }}>📷</span>}
-              슬라이드 {i+1}
-            </button>
-            {slides.length > 1 && (
-              <button onClick={() => deleteSlide(i)}
-                style={{ width:24, height:24, borderRadius:"50%", border:"none",
-                  background:"transparent", color:"#bbb", fontSize:16,
-                  cursor:"pointer", padding:0, lineHeight:1,
-                  display:"flex", alignItems:"center", justifyContent:"center" }}>
-                ×
-              </button>
-            )}
-          </div>
-        ))}
-        <button onClick={addSlide}
-          style={{ padding:"0 16px", height:38, borderRadius:6, fontSize:14,
-            background:"transparent", border:"2px dashed #ccc", color:"#aaa",
-            cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", gap:6 }}>
-          + 추가
-        </button>
-        <button onClick={duplicateSlide}
-          style={{ padding:"0 16px", height:38, borderRadius:6, fontSize:14,
-            background:"transparent", border:"2px dashed #ccc", color:"#aaa",
-            cursor:"pointer", flexShrink:0 }}>
-          복사
-        </button>
-      </div>
-
-      <div style={{ display:"flex", flex:1, minHeight:0, overflow:"hidden" }}>
-
-        {/* ── LEFT PANEL ── */}
-        <div style={{ width:340, borderRight:"1px solid #e0e0e0",
-          overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"20px 22px", flexShrink:0, background:"#fafafa" }}>
-
-          {/* Slide indicator */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
-            marginBottom:16, paddingBottom:12, borderBottom:"1px solid #e8e8e8" }}>
-            <span style={{ fontSize:16, fontWeight:700, color:"#333" }}>
-              슬라이드 {activeSlide+1} / {slides.length}
-            </span>
-            <div style={{ display:"flex", gap:6 }}>
-              <button onClick={duplicateSlide}
-                style={{ fontSize:13, color:"#888", background:"#f0f0f0", border:"1px solid #e0e0e0",
-                  padding:"6px 14px", borderRadius:5, cursor:"pointer" }}>
-                복사
-              </button>
-              {slides.length > 1 && (
-                <button onClick={() => deleteSlide(activeSlide)}
-                  style={{ fontSize:13, color:"#e05555", background:"#fff0f0", border:"1px solid #ffcccc",
-                    padding:"6px 14px", borderRadius:5, cursor:"pointer" }}>
-                  삭제
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Layout mode toggle */}
-          <div style={{ display:"flex", gap:6, marginBottom:16 }}>
-            {[{id:"split",label:"📐 사진+글 나누기"},{id:"overlay",label:"🖼️ 사진 위에 글쓰기"}].map(m => (
-              <button key={m.id} onClick={() => setCfg({...cfg, layout:m.id})}
-                style={{ flex:1, padding:"12px 0", borderRadius:8, fontSize:14, cursor:"pointer",
-                  fontWeight: cfg.layout===m.id ? 700 : 400,
-                  background: cfg.layout===m.id ? "#111" : "#fff",
-                  border: cfg.layout===m.id ? "2px solid #111" : "2px solid #d8d8d8",
-                  color: cfg.layout===m.id ? "#fff" : "#888" }}>
-                {m.label}
-              </button>
-            ))}
-          </div>
-
-          {/* 📷 사진 */}
-          {sectionLabel("📷 사진")}
-          <div style={{ display:"flex", gap:6, marginBottom:10 }}>
-            <button onClick={() => fileRef.current?.click()}
-              style={{ flex:1, padding:"12px 0", borderRadius:6, fontSize:14, fontWeight:600,
-                cursor:"pointer", background:"#222", color:"#fff", border:"none" }}>
-              📁 사진 선택
-            </button>
-            <button onClick={async () => {
-                try {
-                  const items = await navigator.clipboard.read();
-                  for (const item of items) {
-                    const imageType = item.types.find(t => t.startsWith("image/"));
-                    if (imageType) {
-                      const blob = await item.getType(imageType);
-                      const r = new FileReader();
-                      r.onload = ev => setPhotoUrl(ev.target.result);
-                      r.readAsDataURL(blob);
-                      return;
-                    }
-                  }
-                  alert("복사된 이미지가 없습니다.\n이미지를 먼저 복사해주세요.");
-                } catch(e) {
-                  alert("붙여넣기 권한이 필요합니다.\n브라우저에서 허용해주세요.");
-                }
-              }}
-              style={{ flex:1, padding:"12px 0", borderRadius:6, fontSize:14, fontWeight:600,
-                cursor:"pointer", background:"#fff", color:"#222", border:"2px solid #222" }}>
-              📋 붙여넣기
-            </button>
-          </div>
-          {photoUrl ? (
-            <div onClick={() => fileRef.current?.click()}
-              style={{ borderRadius:8, overflow:"hidden", cursor:"pointer", position:"relative", marginBottom:10 }}>
-              <img src={photoUrl} style={{ width:"100%", height:160, objectFit:"cover", display:"block" }}/>
-              <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.6)",
-                display:"flex", alignItems:"center", justifyContent:"center",
-                opacity:0, transition:"0.15s", fontSize:15, color:"#fff", fontWeight:600 }}
-                onMouseEnter={e=>e.currentTarget.style.opacity=1}
-                onMouseLeave={e=>e.currentTarget.style.opacity=0}>✏️ 사진 교체</div>
-            </div>
-          ) : (
-            <div onClick={() => fileRef.current?.click()}
-              style={{ border:"2px dashed #ccc", borderRadius:8, background:"#ebebeb",
-                cursor:"pointer", padding:"24px 0", textAlign:"center", marginBottom:10 }}>
-              <div style={{ fontSize:32, marginBottom:6 }}>📷</div>
-              <div style={{ fontSize:14, color:"#888" }}>또는 여기를 눌러 사진 선택</div>
-            </div>
-          )}
-          <input ref={fileRef} type="file" accept="image/*"
-            style={{ display:"none" }} onChange={handleFile}/>
-          {photoUrl && (
-            <button onClick={() => { setPhotoUrl(null); setUrlInput(""); setUrlError(""); }}
-              style={{ width:"100%", background:"transparent", border:"1px solid #d4d4d4",
-                color:"#999", padding:"8px 0", borderRadius:5, fontSize:13,
-                cursor:"pointer", marginBottom:12 }}>
-              ✕ 사진 제거
-            </button>
-          )}
-
-          {/* ✏️ 텍스트 */}
-          {sectionLabel("✏️ 텍스트")}
-          {inp("큰 제목 (엔터로 줄바꿈)", "headline", "SSD? 이제 안녕. 👋", true)}
-          
-          {/* 본문 + AI 요약 */}
-          <div style={{ marginBottom:18 }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
-              <div style={{ fontSize:14, color:"#555", fontWeight:600 }}>본문 (엔터로 줄바꿈)</div>
-              <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                <button onClick={handleSummarize} disabled={summarizing}
-                  style={{ fontSize:12, fontWeight:700, padding:"5px 14px", borderRadius:5,
-                    cursor: summarizing ? "default" : "pointer", border:"none",
-                    background: summarizing ? "#e0e0e0" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
-                    color: summarizing ? "#999" : "#fff",
-                    display:"flex", alignItems:"center", gap:5,
-                    boxShadow: summarizing ? "none" : "0 2px 8px rgba(99,102,241,0.3)",
-                    transition:"all 0.2s" }}>
-                  {summarizing ? (
-                    <React.Fragment>
-                      <span style={{ display:"inline-block", animation:"spin 1s linear infinite",
-                        fontSize:13 }}>⏳</span>
-                      <span>요약 중...</span>
-                    </React.Fragment>
-                  ) : (
-                    <React.Fragment>
-                      <span style={{ fontSize:13 }}>✨</span>
-                      <span>AI 요약</span>
-                    </React.Fragment>
-                  )}
-                </button>
-                <button onClick={() => { setApiKeyInput(apiKey); setShowApiKeyModal(true); }}
-                  title="API 키 설정"
-                  style={{ width:28, height:28, borderRadius:5, border:"1px solid #d0d0d0",
-                    background: apiKey ? "#f0fdf4" : "#fff8f0", cursor:"pointer",
-                    display:"flex", alignItems:"center", justifyContent:"center",
-                    fontSize:14, padding:0 }}>
-                  {apiKey ? "🔑" : "⚙️"}
-                </button>
-              </div>
-            </div>
-            <textarea value={cfg.body} rows={5} placeholder="설명 텍스트를 붙여넣고 AI 요약 버튼을 눌러보세요"
-              onChange={e => setCfg({...cfg, body:e.target.value})}
-              style={{ width:"100%", background:"#e8e8e8", border:"1px solid #d0d0d0",
-                color:"#333", fontSize:15, padding:"12px 14px", borderRadius:6,
-                fontFamily:"Pretendard, 'Noto Sans KR', sans-serif", outline:"none", resize:"vertical", lineHeight:1.7 }} />
-            <div style={{ fontSize:11, color:"#aaa", marginTop:4, lineHeight:1.5 }}>
-              제품 설명을 붙여넣고 ✨AI 요약을 누르면 카드 이미지에 맞게 요약됩니다.
-              <br/>회사명/제품명은 영어로 유지됩니다. {!apiKey && <span style={{ color:"#16a34a" }}>⚙️ Gemini API 키 설정 (무료)</span>}
-            </div>
-          </div>
-
-          {/* 띠 문구 / 작은 제목 체크박스 */}
-          <div style={{ marginBottom:18 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8, cursor:"pointer" }}
-              onClick={() => {
-                const turning_on = !cfg.showBadge;
-                const patch = { showBadge: turning_on };
-                if (turning_on && !cfg.badge?.trim()) {
-                  patch.badge = cfg.layout === "overlay" ? "DaVinci Resolve" : "NEW ARRIVAL";
-                }
-                setCfg({...cfg, ...patch});
-              }}>
-              <div style={{ width:22, height:22, borderRadius:4, border:"2px solid #bbb",
-                background: cfg.showBadge ? "#222" : "#fff",
-                display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                {cfg.showBadge && <span style={{ color:"#fff", fontSize:14, fontWeight:700 }}>✓</span>}
-              </div>
-              <span style={{ fontSize:14, color:"#555", fontWeight:600 }}>
-                {cfg.layout === "overlay" ? "작은 제목 추가" : "띠 문구 추가"}
-              </span>
-            </div>
-            {cfg.showBadge && (
-              <input value={cfg.badge} placeholder={cfg.layout === "overlay" ? "DaVinci Resolve" : "NEW ARRIVAL"}
-                onChange={e => setCfg({...cfg, badge:e.target.value})}
-                style={{ width:"100%", background:"#e8e8e8", border:"1px solid #d0d0d0",
-                  color:"#333", fontSize:15, padding:"12px 14px", borderRadius:6, outline:"none" }} />
-            )}
-          </div>
-
-          {inp("회사명", "company", "하이픽셀플러스")}
-
-          {/* 🎨 스타일 */}
-          {sectionLabel("🎨 스타일")}
-          <div style={{ fontSize:13, color:"#888", marginBottom:8 }}>강조 색상 (큰 제목)</div>
-          <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap", position:"relative" }}>
-            {ACCENTS.map(a => (
-              <button key={a.id} onClick={() => setCfg({...cfg, accentColor:a.hex})} title={a.label}
-                style={{ width:36, height:36, borderRadius:"50%", background:a.hex, cursor:"pointer",
-                  border: cfg.accentColor===a.hex?"3px solid #222":"3px solid transparent",
-                  outline: cfg.accentColor===a.hex?"2px solid #aaa":"none", outlineOffset:2 }}/>
-            ))}
-            {customColors.map((hex, i) => (
-              <div key={`custom-${i}`} style={{ position:"relative" }}>
-                <button onClick={() => setCfg({...cfg, accentColor:hex})} title={hex}
-                  style={{ width:36, height:36, borderRadius:"50%", background:hex, cursor:"pointer",
-                    border: cfg.accentColor===hex?"3px solid #222":"3px solid transparent",
-                    outline: cfg.accentColor===hex?"2px solid #aaa":"none", outlineOffset:2 }}/>
-                <button onClick={() => {
-                    const next = customColors.filter((_, j) => j !== i);
-                    setCustomColors(next);
-                    if (cfg.accentColor === hex) setCfg({...cfg, accentColor:"#ffffff"});
-                  }}
-                  style={{ position:"absolute", top:-6, right:-6, width:18, height:18,
-                    borderRadius:"50%", background:"#555", color:"#fff", border:"none",
-                    fontSize:11, lineHeight:1, cursor:"pointer", display:"flex",
-                    alignItems:"center", justifyContent:"center", padding:0 }}>×</button>
-              </div>
-            ))}
-            <button onClick={() => { colorPickerRef.current?.click(); }}
-              title="커스텀 색상 추가"
-              style={{ width:36, height:36, borderRadius:"50%", cursor:"pointer",
-                border:"2px dashed #bbb", background:"transparent",
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:20, color:"#aaa", lineHeight:1 }}>+</button>
-            <input ref={colorPickerRef} type="color" value={cfg.accentColor}
-              style={{ position:"absolute", left:0, bottom:-10, opacity:0, width:36, height:1, pointerEvents:"none" }}
-              onChange={e => {
-                setCfg({...cfg, accentColor: e.target.value});
-              }}
-              onBlur={e => {
-                const hex = e.target.value;
-                const allColors = [...ACCENTS.map(a => a.hex), ...customColors];
-                if (!allColors.includes(hex)) setCustomColors(prev => [...prev, hex]);
-              }}/>
-          </div>
-
-          <div style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer", marginBottom:14 }}
-            onClick={() => setCfg({...cfg, showBranding:!cfg.showBranding})}>
-            <div style={{ width:48, height:26, borderRadius:13, position:"relative",
-              background: cfg.showBranding?"#222":"#ccc", transition:"0.2s" }}>
-              <div style={{ width:20, height:20, borderRadius:"50%", background:"#fff",
-                position:"absolute", top:3, left:cfg.showBranding?25:3, transition:"0.2s" }}/>
-            </div>
-            <span style={{ fontSize:14, color:"#555" }}>브랜딩 하단바 {cfg.showBranding?"ON":"OFF"}</span>
-          </div>
-        </div>
-
-        {/* ── CENTER: Preview + Controls ── */}
-        <div style={{ flex:1, display:"flex", flexDirection:"column",
-          background:"#f2f2f2", minWidth:0 }}>
-
-          {/* Top toolbar */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:14,
-            flexWrap:"wrap", padding:"12px 24px 0", flexShrink:0 }}>
-            <div style={{ display:"flex", gap:6 }}>
-              <div style={{ padding:"8px 16px", borderRadius:5, fontSize:14, fontWeight:700,
-                background:"#111", color:"#fff", border:"1px solid #222" }}>
-                카드 4:5
-              </div>
-            </div>
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <button onClick={() => { setBlurMode(!blurMode); if (!blurMode) setCfg({...cfg, freePos:false}); }}
-                style={{ padding:"8px 16px", borderRadius:6, fontSize:13, fontWeight:700,
-                  cursor:"pointer", border: blurMode ? "2px solid #e05555" : "2px solid #ccc",
-                  background: blurMode ? "#fff0f0" : "#fff",
-                  color: blurMode ? "#e05555" : "#888" }}>
-                {blurMode ? "🔴 흐리게 켜짐" : "🟡 흐리게"}
-              </button>
-              {blurMode && (<>
-                <div style={{ display:"flex", alignItems:"center", gap:6, background:"#f8f8f8",
-                  border:"1px solid #ddd", borderRadius:6, padding:"4px 10px" }}>
-                  <span style={{ fontSize:12, color:"#888" }}>크기</span>
-                  <input type="range" min="1" max="100" step="1" value={brushSize}
-                    onChange={e => setBrushSize(parseInt(e.target.value))}
-                    style={{ width:80, accentColor:"#e05555" }}/>
-                  <span style={{ fontSize:12, color:"#666", minWidth:30 }}>{brushSize}</span>
-                </div>
-                {(slide.blurStrokes||[]).length > 0 && (
-                  <button onClick={() => updateSlide({ blurStrokes: [] })}
-                    style={{ padding:"6px 12px", borderRadius:5, fontSize:12, fontWeight:600,
-                      cursor:"pointer", border:"1px solid #ddd", background:"#fff", color:"#888" }}>
-                    흐리게 지우기
-                  </button>
-                )}
-              </>)}
-              <button onClick={() => {
-                  if (!cfg.freePos) {
-                    if (!slide.headPos) updateSlide({ headPos: {x:0.5, y:0.5} });
-                    if (!slide.bodyPos) updateSlide({ bodyPos: {x:0.5, y:0.7} });
-                  }
-                  setCfg({...cfg, freePos: !cfg.freePos});
-                  if (blurMode) setBlurMode(false);
-                }}
-                style={{ padding:"8px 16px", borderRadius:6, fontSize:13, fontWeight:700,
-                  cursor:"pointer", border: cfg.freePos ? "2px solid #3b82f6" : "2px solid #ccc",
-                  background: cfg.freePos ? "#eff6ff" : "#fff",
-                  color: cfg.freePos ? "#3b82f6" : "#888" }}>
-                {cfg.freePos ? "🔵 자유 배치 ON" : "✋ 자유 배치"}
-              </button>
-              {cfg.freePos && (
-                <button onClick={() => updateSlide({ headPos: null, bodyPos: null })}
-                  style={{ padding:"6px 12px", borderRadius:5, fontSize:12, fontWeight:600,
-                    cursor:"pointer", border:"1px solid #ddd", background:"#fff", color:"#888" }}>
-                  위치 초기화
-                </button>
-              )}
-              <span style={{ fontSize:12, color:"#999", fontWeight:600, padding:"6px 10px",
-                background:"#f0f0f0", borderRadius:5 }}>PNG</span>
-              <button onClick={download}
-                style={{ background:"#111", color:"#fff", border:"none",
-                  padding:"10px 24px", borderRadius:6, fontWeight:800,
-                  fontSize:15, cursor:"pointer",
-                  boxShadow:"0 2px 10px rgba(0,0,0,0.25)" }}>
-                ↓ 저장하기
-              </button>
-              {slides.length > 1 && (
-                <button onClick={downloadAll}
-                  style={{ background:"#fff", color:"#111", border:"2px solid #111",
-                    padding:"8px 20px", borderRadius:6, fontWeight:800, fontSize:14, cursor:"pointer" }}>
-                  ↓ 전체 {slides.length}장
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Canvas preview */}
-          <div ref={previewContainerRef} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center",
-            justifyContent:"center", padding:"12px 28px", gap:6, minHeight:0 }}>
-            <div style={{ position:"relative" }}>
-              <div ref={dragAreaRef}
-                onMouseDown={onDragStart} onMouseMove={onDragMove}
-                onMouseUp={onDragEnd} onMouseLeave={onDragEnd}
-                onTouchStart={onDragStart} onTouchMove={onDragMove}
-                onTouchEnd={onDragEnd} onTouchCancel={onDragEnd}
-                style={{ boxShadow:"0 0 0 1px #ddd, 0 8px 32px rgba(0,0,0,0.15)",
-                  borderRadius:5, overflow:"hidden",
-                  cursor: blurMode ? "crosshair" : cfg.freePos ? "move" : (photoUrl ? (isDragging ? "grabbing" : "grab") : "default"),
-                  userSelect:"none", touchAction:"none" }}>
-                <CanvasPreview config={fullCfg} size={size} scale={previewScale} exportRef={exportRef}/>
-              </div>
-              {(photoUrl || blurMode || cfg.freePos) && (
-                <div style={{ position:"absolute", bottom:-24, left:0, right:0,
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:12, color: blurMode ? "#e05555" : cfg.freePos ? "#3b82f6" : "#999", pointerEvents:"none" }}>
-                  <span>{blurMode ? "🖌️ 드래그로 흐리게 칠하기" : cfg.freePos ? "✋ 제목/본문을 드래그로 이동" : "🖱️ 드래그로 위치 조정"}</span>
-                </div>
-              )}
-            </div>
-            <div style={{ fontSize:12, color:"#bbb" }}>{size.w} × {Math.round(estTotalH)}px</div>
-          </div>
-
-          {/* ── Bottom slider panel ── */}
-          <div style={{ flexShrink:0, background:"#fff", borderTop:"1px solid #e0e0e0",
-            padding:"10px 24px", overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
-            <div style={{ display:"flex", gap:20, alignItems:"flex-start", minWidth:700 }}>
-
-              {photoUrl && (
-                <div style={{ minWidth:170, flex:1 }}>
-                  <div style={{ fontSize:11, color:"#999", fontWeight:700, marginBottom:6 }}>사진 조정</div>
-                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                    <span style={{ fontSize:11, color:"#888", minWidth:40 }}>크기</span>
-                    <input type="range" min="1" max="3" step="0.01" value={cfg.imgScale}
-                      onChange={e => setCfg({...cfg, imgScale:parseFloat(e.target.value)})}
-                      style={{ flex:1, accentColor:"#555" }}/>
-                    <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{Math.round(cfg.imgScale*100)}%</span>
-                  </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                    <span style={{ fontSize:11, color:"#888", minWidth:40 }}>좌우</span>
-                    <input type="range" min="-1" max="1" step="0.01" value={cfg.imgOffsetX}
-                      onChange={e => setCfg({...cfg, imgOffsetX:parseFloat(e.target.value)})}
-                      style={{ flex:1, accentColor:"#555" }}/>
-                    <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{cfg.imgOffsetX>=0?"+":""}{Math.round(cfg.imgOffsetX*100)}</span>
-                  </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                    <span style={{ fontSize:11, color:"#888", minWidth:40 }}>상하</span>
-                    <input type="range" min="-1" max="1" step="0.01" value={cfg.imgOffsetY}
-                      onChange={e => setCfg({...cfg, imgOffsetY:parseFloat(e.target.value)})}
-                      style={{ flex:1, accentColor:"#555" }}/>
-                    <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{cfg.imgOffsetY>=0?"+":""}{Math.round(cfg.imgOffsetY*100)}</span>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ minWidth:170, flex:1 }}>
-                <div style={{ fontSize:11, color:"#999", fontWeight:700, marginBottom:6 }}>글자 크기</div>
-                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                  <span style={{ fontSize:11, color:"#888", minWidth:40 }}>제목</span>
-                  <input type="range" min="0.5" max="2" step="0.05" value={cfg.headSizeScale}
-                    onChange={e => setCfg({...cfg, headSizeScale:parseFloat(e.target.value)})}
-                    style={{ flex:1, accentColor:"#555" }}/>
-                  <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{Math.round(cfg.headSizeScale*100)}%</span>
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                  <span style={{ fontSize:11, color:"#888", minWidth:40 }}>본문</span>
-                  <input type="range" min="0.5" max="2" step="0.05" value={cfg.bodySizeScale}
-                    onChange={e => setCfg({...cfg, bodySizeScale:parseFloat(e.target.value)})}
-                    style={{ flex:1, accentColor:"#555" }}/>
-                  <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{Math.round(cfg.bodySizeScale*100)}%</span>
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{ fontSize:11, color:"#888", minWidth:40 }}>줄 간격</span>
-                  <input type="range" min="0.8" max="2.5" step="0.05" value={cfg.bodyLineHeight}
-                    onChange={e => setCfg({...cfg, bodyLineHeight:parseFloat(e.target.value)})}
-                    style={{ flex:1, accentColor:"#555" }}/>
-                  <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{cfg.bodyLineHeight.toFixed(1)}</span>
-                </div>
-              </div>
-
-              <div style={{ minWidth:170, flex:1 }}>
-                <div style={{ fontSize:11, color:"#999", fontWeight:700, marginBottom:6 }}>위치 / 여백</div>
-                <div style={{ display:"flex", gap:3, marginBottom:6 }}>
-                  {[{id:"left",label:"왼쪽"},{id:"center",label:"가운데"},{id:"right",label:"오른쪽"}].map(a => (
-                    <button key={a.id} onClick={() => setCfg({...cfg, textAlign:a.id})}
-                      style={{ flex:1, padding:"5px 0", borderRadius:4, fontSize:11, fontWeight:600,
-                        cursor:"pointer", border:"none",
-                        background: cfg.textAlign===a.id ? "#222" : "#f0f0f0",
-                        color: cfg.textAlign===a.id ? "#fff" : "#888" }}>
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                  <span style={{ fontSize:11, color:"#888", minWidth:40 }}>제목↔본문</span>
-                  <input type="range" min="0" max="4" step="0.1" value={cfg.textGap}
-                    onChange={e => setCfg({...cfg, textGap:parseFloat(e.target.value)})}
-                    style={{ flex:1, accentColor:"#555" }}/>
-                  <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{Math.round(cfg.textGap*100)}%</span>
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                  <span style={{ fontSize:11, color:"#888", minWidth:40 }}>위아래</span>
-                  <input type="range" min="-1" max="1" step="0.05" value={cfg.textVAlign}
-                    onChange={e => setCfg({...cfg, textVAlign:parseFloat(e.target.value)})}
-                    style={{ flex:1, accentColor:"#555" }}/>
-                  <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{cfg.textVAlign < -0.3 ? "위" : cfg.textVAlign > 0.3 ? "아래" : "가운데"}</span>
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{ fontSize:11, color:"#888", minWidth:40 }}>좌우 여백</span>
-                  <input type="range" min="0.02" max="0.25" step="0.01" value={cfg.textPadX}
-                    onChange={e => setCfg({...cfg, textPadX:parseFloat(e.target.value)})}
-                    style={{ flex:1, accentColor:"#555" }}/>
-                  <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{Math.round(cfg.textPadX*100)}%</span>
-                </div>
-              </div>
-
-              <div style={{ minWidth:150 }}>
-                <div style={{ fontSize:11, color:"#999", fontWeight:700, marginBottom:6 }}>배치</div>
-                {cfg.layout === "split" && (
-                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                    <span style={{ fontSize:11, color:"#888", minWidth:40 }}>사진 크기</span>
-                    <input type="range" min="0.30" max="1.50" step="0.01" value={cfg.photoRatio}
-                      onChange={e => setCfg({...cfg, photoRatio:parseFloat(e.target.value)})}
-                      style={{ flex:1, accentColor:"#555" }}/>
-                    <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{Math.round(cfg.photoRatio*100)}%</span>
-                  </div>
-                )}
-                {cfg.layout === "overlay" && (
-                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                    <span style={{ fontSize:11, color:"#888", minWidth:40 }}>어두움</span>
-                    <input type="range" min="0.1" max="0.7" step="0.05" value={cfg.overlayStart}
-                      onChange={e => setCfg({...cfg, overlayStart:parseFloat(e.target.value)})}
-                      style={{ flex:1, accentColor:"#555" }}/>
-                    <span style={{ fontSize:11, color:"#666", minWidth:32, textAlign:"right" }}>{Math.round(cfg.overlayStart*100)}%</span>
-                  </div>
-                )}
-                <button onClick={() => setCfg({...cfg, imgOffsetX:0, imgOffsetY:0, imgScale:1, headSizeScale:1, bodySizeScale:1, textGap:1, textVAlign:0, bodyLineHeight:1, overlayStart:0.35, textPadX:0.08, photoRatio:0.60, textAlign:"center"})}
-                  style={{ marginTop:8, width:"100%", background:"transparent", border:"1px solid #d4d4d4",
-                    color:"#888", padding:"5px 0", borderRadius:4, fontSize:11, cursor:"pointer" }}>
-                  ↺ 초기화
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      {/* ── API Key Modal ── */}
-      {showApiKeyModal && (
-        <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.5)",
-          display:"flex", alignItems:"center", justifyContent:"center" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowApiKeyModal(false); }}>
-          <div style={{ width:440, background:"#fff", borderRadius:16, padding:"36px 32px",
-            boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
-            <div style={{ fontSize:18, fontWeight:800, color:"#333", marginBottom:6 }}>
-              ✨ AI 요약 — API 키 설정
-            </div>
-            <div style={{ fontSize:13, color:"#888", marginBottom:20, lineHeight:1.7 }}>
-              Google Gemini API 키를 입력하면 제품 설명을<br/>
-              인스타그램 카드용 본문으로 자동 요약할 수 있습니다.<br/>
-              <span style={{ color:"#16a34a", fontWeight:600 }}>무료 티어로 하루 1,000건까지 사용 가능합니다.</span>
-            </div>
-            <div style={{ fontSize:12, color:"#666", marginBottom:8, fontWeight:600 }}>Google Gemini API Key</div>
-            <input value={apiKeyInput}
-              onChange={e => setApiKeyInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && saveApiKey()}
-              placeholder="AIza..."
-              type="password"
-              style={{ width:"100%", padding:"14px 16px", fontSize:14, borderRadius:8,
-                border:"2px solid #ddd", outline:"none", marginBottom:12,
-                fontFamily:"monospace" }}/>
-            <div style={{ fontSize:11, color:"#aaa", marginBottom:20, lineHeight:1.6 }}>
-              키는 이 브라우저의 localStorage에만 저장됩니다.<br/>
-              <a href="https://aistudio.google.com/apikey" target="_blank"
-                style={{ color:"#6366f1" }}>Google AI Studio</a>에서 무료로 발급받을 수 있습니다.
-            </div>
-            <div style={{ display:"flex", gap:8 }}>
-              <button onClick={saveApiKey}
-                style={{ flex:1, padding:"14px 0", borderRadius:8, border:"none",
-                  background:"#111", color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer" }}>
-                저장
-              </button>
-              {apiKey && (
-                <button onClick={clearApiKey}
-                  style={{ padding:"14px 20px", borderRadius:8, border:"1px solid #ffcccc",
-                    background:"#fff0f0", color:"#e05555", fontSize:14, fontWeight:600, cursor:"pointer" }}>
-                  삭제
-                </button>
-              )}
-              <button onClick={() => setShowApiKeyModal(false)}
-                style={{ padding:"14px 20px", borderRadius:8, border:"1px solid #ddd",
-                  background:"#f5f5f5", color:"#888", fontSize:14, cursor:"pointer" }}>
-                닫기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      <style>{`* { box-sizing:border-box; margin:0; padding:0; }
-        input, textarea { outline:none !important; }
-        input[type="range"] { height:8px; cursor:pointer; }
-        input[type="range"]::-webkit-slider-thumb { width:20px; height:20px; }
-        ::-webkit-scrollbar { width:6px; }
-        ::-webkit-scrollbar-track { background:#f0f0f0; }
-        ::-webkit-scrollbar-thumb { background:#bbb; border-radius:3px; }`}
-      </style>
     </div>
-  );
+  )}
+  <style>{`* { box-sizing:border-box; margin:0; padding:0; }
+    input, textarea { outline:none !important; }
+    input[type="range"] { height:8px; cursor:pointer; }
+    input[type="range"]::-webkit-slider-thumb { width:20px; height:20px; }
+    ::-webkit-scrollbar { width:6px; }
+    ::-webkit-scrollbar-track { background:#f0f0f0; }
+    ::-webkit-scrollbar-thumb { background:#bbb; border-radius:3px; }`}
+  </style>
+</div>
+```
+
+);
 }
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+ReactDOM.createRoot(document.getElementById(“root”)).render(<App />);
 </script>
+
 </body>
 </html>
