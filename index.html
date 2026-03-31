@@ -21,6 +21,7 @@
   ::-webkit-scrollbar { width:6px; }
   ::-webkit-scrollbar-track { background:#f0f0f0; }
   ::-webkit-scrollbar-thumb { background:#bbb; border-radius:3px; }
+  @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -30,9 +31,6 @@ const { useState, useRef, useEffect, useCallback } = React;
 
 const SIZES = [
   { id: "card",   label: "카드 4:5",    w: 1080, h: 1350  },
-  { id: "feed",   label: "피드 1:1",    w: 1080, h: 1080  },
-  { id: "story",  label: "스토리 9:16", w: 1080, h: 1920  },
-  { id: "banner", label: "배너 16:9",   w: 1920, h: 1080  },
 ];
 
 const ACCENTS = [
@@ -586,8 +584,14 @@ function App() {
 function MainApp({ resellerName, handleLogout }) {
   const [pasteHint, setPasteHint] = useState(false);
   const [size,     setSize]     = useState(SIZES[0]);
-  const [fmt,      setFmt]      = useState("jpeg");
+  const [fmt,      setFmt]      = useState("png");
   const [customColors, setCustomColors] = useState([]);
+  const [summarizing, setSummarizing] = useState(false);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [apiKey, setApiKey] = useState(() => {
+    try { return localStorage.getItem("bmd_gemini_api_key") || ""; } catch(e) { return ""; }
+  });
+  const [apiKeyInput, setApiKeyInput] = useState("");
   const colorPickerRef = useRef(null);
 
   // ── Slide system ──
@@ -1069,6 +1073,93 @@ function MainApp({ resellerName, handleLogout }) {
     }
   };
 
+  // ── AI 요약 기능 (Gemini 2.5 Flash) ──
+  const handleSummarize = async () => {
+    const bodyText = cfg.body?.trim();
+    if (!bodyText || bodyText === "본문을 입력하세요.") {
+      alert("요약할 본문 텍스트를 먼저 입력해주세요.");
+      return;
+    }
+    if (!apiKey) {
+      setApiKeyInput("");
+      setShowApiKeyModal(true);
+      return;
+    }
+    setSummarizing(true);
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `당신은 Blackmagic Design 제품 마케팅 카피라이터입니다. 아래 텍스트를 인스타그램 카드 이미지용 본문으로 요약해주세요.
+
+## 가이드라인
+1. **회사명과 제품명은 반드시 영어 원문 그대로 유지** (예: Blackmagic Design, DaVinci Resolve, Blackmagic Cloud, PYXIS, HyperDeck 등)
+2. 핵심 기능과 장점 위주로 **3~5줄** 이내로 간결하게 요약
+3. 줄바꿈(\\n)으로 가독성 있게 구분
+4. 마케팅 톤: 전문적이면서도 친근한 한국어
+5. 불필요한 수식어와 반복 제거
+6. 이모지는 사용하지 않음
+
+## 요약할 텍스트
+${bodyText}
+
+요약 결과만 출력하세요. 다른 설명이나 인사말은 넣지 마세요.`
+            }]
+          }],
+          generationConfig: {
+            maxOutputTokens: 500,
+            temperature: 0.7,
+          }
+        })
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        if (response.status === 400 || response.status === 403) {
+          alert("API 키가 유효하지 않거나 권한이 없습니다.\n설정에서 다시 입력해주세요.");
+          setApiKey("");
+          try { localStorage.removeItem("bmd_gemini_api_key"); } catch(e) {}
+          setShowApiKeyModal(true);
+          return;
+        }
+        const msg = errData.error?.message || `API 오류 (${response.status})`;
+        throw new Error(msg);
+      }
+      const data = await response.json();
+      const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (result) {
+        setCfg({...cfg, body: result.trim()});
+      } else {
+        alert("요약 결과를 받지 못했습니다. 다시 시도해주세요.");
+      }
+    } catch (err) {
+      console.error("AI 요약 오류:", err);
+      alert("AI 요약 중 오류가 발생했습니다.\n" + err.message);
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  const saveApiKey = () => {
+    const key = apiKeyInput.trim();
+    if (!key.startsWith("AIza")) {
+      alert("올바른 Google Gemini API 키를 입력해주세요.\n(AIza 로 시작합니다)");
+      return;
+    }
+    setApiKey(key);
+    try { localStorage.setItem("bmd_gemini_api_key", key); } catch(e) {}
+    setShowApiKeyModal(false);
+  };
+
+  const clearApiKey = () => {
+    setApiKey("");
+    try { localStorage.removeItem("bmd_gemini_api_key"); } catch(e) {}
+    setShowApiKeyModal(false);
+  };
+
   const fullCfg = cfg;
   // Estimate actual canvas height (split mode can be taller than base)
   const estRatio = cfg.photoRatio ?? 0.60;
@@ -1286,7 +1377,53 @@ function MainApp({ resellerName, handleLogout }) {
           {/* ✏️ 텍스트 */}
           {sectionLabel("✏️ 텍스트")}
           {inp("큰 제목 (엔터로 줄바꿈)", "headline", "SSD? 이제 안녕. 👋", true)}
-          {inp("본문 (엔터로 줄바꿈)", "body", "설명 텍스트...", true)}
+          
+          {/* 본문 + AI 요약 */}
+          <div style={{ marginBottom:18 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
+              <div style={{ fontSize:14, color:"#555", fontWeight:600 }}>본문 (엔터로 줄바꿈)</div>
+              <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                <button onClick={handleSummarize} disabled={summarizing}
+                  style={{ fontSize:12, fontWeight:700, padding:"5px 14px", borderRadius:5,
+                    cursor: summarizing ? "default" : "pointer", border:"none",
+                    background: summarizing ? "#e0e0e0" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                    color: summarizing ? "#999" : "#fff",
+                    display:"flex", alignItems:"center", gap:5,
+                    boxShadow: summarizing ? "none" : "0 2px 8px rgba(99,102,241,0.3)",
+                    transition:"all 0.2s" }}>
+                  {summarizing ? (
+                    <React.Fragment>
+                      <span style={{ display:"inline-block", animation:"spin 1s linear infinite",
+                        fontSize:13 }}>⏳</span>
+                      <span>요약 중...</span>
+                    </React.Fragment>
+                  ) : (
+                    <React.Fragment>
+                      <span style={{ fontSize:13 }}>✨</span>
+                      <span>AI 요약</span>
+                    </React.Fragment>
+                  )}
+                </button>
+                <button onClick={() => { setApiKeyInput(apiKey); setShowApiKeyModal(true); }}
+                  title="API 키 설정"
+                  style={{ width:28, height:28, borderRadius:5, border:"1px solid #d0d0d0",
+                    background: apiKey ? "#f0fdf4" : "#fff8f0", cursor:"pointer",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:14, padding:0 }}>
+                  {apiKey ? "🔑" : "⚙️"}
+                </button>
+              </div>
+            </div>
+            <textarea value={cfg.body} rows={5} placeholder="설명 텍스트를 붙여넣고 AI 요약 버튼을 눌러보세요"
+              onChange={e => setCfg({...cfg, body:e.target.value})}
+              style={{ width:"100%", background:"#e8e8e8", border:"1px solid #d0d0d0",
+                color:"#333", fontSize:15, padding:"12px 14px", borderRadius:6,
+                fontFamily:"Pretendard, 'Noto Sans KR', sans-serif", outline:"none", resize:"vertical", lineHeight:1.7 }} />
+            <div style={{ fontSize:11, color:"#aaa", marginTop:4, lineHeight:1.5 }}>
+              제품 설명을 붙여넣고 ✨AI 요약을 누르면 카드 이미지에 맞게 요약됩니다.
+              <br/>회사명/제품명은 영어로 유지됩니다. {!apiKey && <span style={{ color:"#16a34a" }}>⚙️ Gemini API 키 설정 (무료)</span>}
+            </div>
+          </div>
 
           {/* 띠 문구 / 작은 제목 체크박스 */}
           <div style={{ marginBottom:18 }}>
@@ -1382,16 +1519,10 @@ function MainApp({ resellerName, handleLogout }) {
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:14,
             flexWrap:"wrap", padding:"12px 24px 0", flexShrink:0 }}>
             <div style={{ display:"flex", gap:6 }}>
-              {SIZES.map(s => (
-                <button key={s.id} onClick={() => setSize(s)}
-                  style={{ padding:"8px 16px", borderRadius:5, fontSize:14, fontWeight:700,
-                    cursor:"pointer",
-                    background: size.id===s.id?"#111":"transparent",
-                    color: size.id===s.id?"#fff":"#888",
-                    border:`1px solid ${size.id===s.id?"#222":"#ccc"}` }}>
-                  {s.label}
-                </button>
-              ))}
+              <div style={{ padding:"8px 16px", borderRadius:5, fontSize:14, fontWeight:700,
+                background:"#111", color:"#fff", border:"1px solid #222" }}>
+                카드 4:5
+              </div>
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
               <button onClick={() => { setBlurMode(!blurMode); if (!blurMode) setCfg({...cfg, freePos:false}); }}
@@ -1420,7 +1551,6 @@ function MainApp({ resellerName, handleLogout }) {
               </>)}
               <button onClick={() => {
                   if (!cfg.freePos) {
-                    // Turning on: initialize positions if not set
                     if (!slide.headPos) updateSlide({ headPos: {x:0.5, y:0.5} });
                     if (!slide.bodyPos) updateSlide({ bodyPos: {x:0.5, y:0.7} });
                   }
@@ -1440,17 +1570,8 @@ function MainApp({ resellerName, handleLogout }) {
                   위치 초기화
                 </button>
               )}
-              <div style={{ display:"flex", gap:2, background:"#e0e0e0", borderRadius:6, padding:3 }}>
-                {[{id:"jpeg",label:"JPEG"},{id:"png",label:"PNG"}].map(f => (
-                  <button key={f.id} onClick={() => setFmt(f.id)}
-                    style={{ padding:"6px 14px", borderRadius:5, fontSize:13, fontWeight:700,
-                      cursor:"pointer", border:"none",
-                      background: fmt===f.id?"#111":"transparent",
-                      color: fmt===f.id?"#fff":"#888" }}>
-                    {f.label}
-                  </button>
-                ))}
-              </div>
+              <span style={{ fontSize:12, color:"#999", fontWeight:600, padding:"6px 10px",
+                background:"#f0f0f0", borderRadius:5 }}>PNG</span>
               <button onClick={download}
                 style={{ background:"#111", color:"#fff", border:"none",
                   padding:"10px 24px", borderRadius:6, fontWeight:800,
@@ -1617,6 +1738,57 @@ function MainApp({ resellerName, handleLogout }) {
           </div>
         </div>
       </div>
+      {/* ── API Key Modal ── */}
+      {showApiKeyModal && (
+        <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.5)",
+          display:"flex", alignItems:"center", justifyContent:"center" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowApiKeyModal(false); }}>
+          <div style={{ width:440, background:"#fff", borderRadius:16, padding:"36px 32px",
+            boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ fontSize:18, fontWeight:800, color:"#333", marginBottom:6 }}>
+              ✨ AI 요약 — API 키 설정
+            </div>
+            <div style={{ fontSize:13, color:"#888", marginBottom:20, lineHeight:1.7 }}>
+              Google Gemini API 키를 입력하면 제품 설명을<br/>
+              인스타그램 카드용 본문으로 자동 요약할 수 있습니다.<br/>
+              <span style={{ color:"#16a34a", fontWeight:600 }}>무료 티어로 하루 1,000건까지 사용 가능합니다.</span>
+            </div>
+            <div style={{ fontSize:12, color:"#666", marginBottom:8, fontWeight:600 }}>Google Gemini API Key</div>
+            <input value={apiKeyInput}
+              onChange={e => setApiKeyInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && saveApiKey()}
+              placeholder="AIza..."
+              type="password"
+              style={{ width:"100%", padding:"14px 16px", fontSize:14, borderRadius:8,
+                border:"2px solid #ddd", outline:"none", marginBottom:12,
+                fontFamily:"monospace" }}/>
+            <div style={{ fontSize:11, color:"#aaa", marginBottom:20, lineHeight:1.6 }}>
+              키는 이 브라우저의 localStorage에만 저장됩니다.<br/>
+              <a href="https://aistudio.google.com/apikey" target="_blank"
+                style={{ color:"#6366f1" }}>Google AI Studio</a>에서 무료로 발급받을 수 있습니다.
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={saveApiKey}
+                style={{ flex:1, padding:"14px 0", borderRadius:8, border:"none",
+                  background:"#111", color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer" }}>
+                저장
+              </button>
+              {apiKey && (
+                <button onClick={clearApiKey}
+                  style={{ padding:"14px 20px", borderRadius:8, border:"1px solid #ffcccc",
+                    background:"#fff0f0", color:"#e05555", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+                  삭제
+                </button>
+              )}
+              <button onClick={() => setShowApiKeyModal(false)}
+                style={{ padding:"14px 20px", borderRadius:8, border:"1px solid #ddd",
+                  background:"#f5f5f5", color:"#888", fontSize:14, cursor:"pointer" }}>
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <style>{`* { box-sizing:border-box; margin:0; padding:0; }
         input, textarea { outline:none !important; }
         input[type="range"] { height:8px; cursor:pointer; }
