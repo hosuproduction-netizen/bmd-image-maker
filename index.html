@@ -10,6 +10,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+  firebase.initializeApp({
+    apiKey: "AIzaSyAyet2kDlBg_fVWdQZ9gCrkZTUv8nb0YKw",
+    authDomain: "hipixel-image-review.firebaseapp.com",
+    projectId: "hipixel-image-review",
+    storageBucket: "hipixel-image-review.firebasestorage.app",
+    messagingSenderId: "71301367192",
+    appId: "1:71301367192:web:e1f6725c48d355ba0397ed"
+  });
+  const db = firebase.firestore();
+</script>
 <style>
   html, body, #root { height:100%; margin:0; overflow:hidden; }
   html { height: -webkit-fill-available; }
@@ -578,11 +592,11 @@ function App() {
     );
   }
 
-  return <MainApp resellerName={resellerName} resellerLogo={resellerLogo} handleLogout={handleLogout} />;
+  return <MainApp resellerName={resellerName} resellerLogo={resellerLogo} handleLogout={handleLogout} resellerId={authCode} />;
 }
 
 // ─── Main App ────────────────────────────────────────────────
-function MainApp({ resellerName, resellerLogo, handleLogout }) {
+function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
   const [pasteHint, setPasteHint] = useState(false);
   const [size,     setSize]     = useState(SIZES[0]);
   const [fmt,      setFmt]      = useState("png");
@@ -595,6 +609,13 @@ function MainApp({ resellerName, resellerLogo, handleLogout }) {
   });
   const [apiKeyInput, setApiKeyInput] = useState("");
   const colorPickerRef = useRef(null);
+
+  // ── 검수 요청 state ──
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submitNote,      setSubmitNote]      = useState("");
+  const [submitting,      setSubmitting]      = useState(false);
+  const [submitDone,      setSubmitDone]      = useState(false);
+  const [mySubmissions,   setMySubmissions]   = useState([]);
 
   // ── Slide system ──
   const defaultSlide = (overrides={}) => ({
@@ -1181,6 +1202,68 @@ ${inputText}
     setShowApiKeyModal(false);
   };
 
+  // ── 검수 요청 기능 ──────────────────────────────────────────────
+  const generateThumbnail = (slideData, sharedData) => new Promise(resolve => {
+    const canvas = document.createElement("canvas");
+    const thumbW = 360;
+    const sc = thumbW / size.w;
+    const loadAndDraw = (imgEl) => {
+      drawCanvas(canvas, { ...sharedData, ...slideData }, size, imgEl);
+      applyMosaic(canvas, slideData.blurStrokes || []);
+      const tc = document.createElement("canvas");
+      tc.width = thumbW;
+      tc.height = Math.round(canvas.height * sc);
+      tc.getContext("2d").drawImage(canvas, 0, 0, tc.width, tc.height);
+      resolve(tc.toDataURL("image/jpeg", 0.65));
+    };
+    if (slideData.photoUrl) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => loadAndDraw(img);
+      img.onerror = () => loadAndDraw(null);
+      img.src = slideData.photoUrl;
+    } else { loadAndDraw(null); }
+  });
+
+  const handleSubmitReview = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const thumbnails = await Promise.all(slides.map(s => generateThumbnail(s, shared)));
+      const slideData  = slides.map((s, i) => ({
+        thumbnail: thumbnails[i],
+        headline:  s.headline || "",
+        body:      s.body || "",
+        badge:     s.badge || "",
+      }));
+      await db.collection("submissions").add({
+        resellerId,
+        resellerName,
+        slides:      slideData,
+        slideCount:  slides.length,
+        note:        submitNote.trim(),
+        status:      "pending",
+        submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        adminComment: "",
+      });
+      setSubmitDone(true);
+      setSubmitNote("");
+      setTimeout(() => { setShowSubmitModal(false); setSubmitDone(false); }, 2500);
+    } catch(e) { alert("제출 중 오류가 발생했습니다.\n" + e.message); }
+    finally { setSubmitting(false); }
+  };
+
+  // 내 검수 현황 실시간 구독
+  useEffect(() => {
+    if (!resellerId) return;
+    const unsub = db.collection("submissions")
+      .where("resellerId", "==", resellerId)
+      .orderBy("submittedAt", "desc")
+      .limit(5)
+      .onSnapshot(snap => setMySubmissions(snap.docs.map(d => ({ id:d.id, ...d.data() }))));
+    return () => unsub();
+  }, [resellerId]);
+
   const fullCfg = cfg;
   // Estimate actual canvas height (split mode can be taller than base)
   const estRatio = cfg.photoRatio ?? 0.60;
@@ -1604,6 +1687,7 @@ ${inputText}
                   ↓ 전체 {slides.length}장
                 </button>
               )}
+{/* 검수 요청 기능 비활성화 */}
             </div>
           </div>
 
@@ -1793,6 +1877,100 @@ ${inputText}
           </div>
         </div>
       </div>
+      {/* ── 검수 요청 모달 ── */}
+      {showSubmitModal && (
+        <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.5)",
+          display:"flex", alignItems:"center", justifyContent:"center" }}
+          onClick={e => { if (!submitting && e.target===e.currentTarget) setShowSubmitModal(false); }}>
+          <div style={{ width:480, background:"#fff", borderRadius:16, padding:"36px 32px",
+            boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+            {submitDone ? (
+              <div style={{ textAlign:"center", padding:"20px 0" }}>
+                <div style={{ fontSize:52, marginBottom:16 }}>✅</div>
+                <div style={{ fontSize:20, fontWeight:800, color:"#16a34a", marginBottom:8 }}>
+                  검수 요청 완료!
+                </div>
+                <div style={{ fontSize:14, color:"#888", lineHeight:1.8 }}>
+                  하이픽셀플러스 담당자가 확인 후<br/>연락드리겠습니다.
+                </div>
+              </div>
+            ) : (<>
+              <div style={{ fontSize:20, fontWeight:800, color:"#111", marginBottom:6 }}>
+                ✅ 검수 요청
+              </div>
+              <div style={{ fontSize:13, color:"#888", marginBottom:20, lineHeight:1.8 }}>
+                현재 작업한 <strong style={{ color:"#111" }}>{slides.length}장</strong>의 슬라이드를
+                하이픽셀플러스 담당자에게 검수 요청합니다.
+              </div>
+
+              {/* 최근 검수 현황 */}
+              {mySubmissions.length > 0 && (
+                <div style={{ marginBottom:20, padding:"14px 16px", background:"#f8f8f8",
+                  borderRadius:10, border:"1px solid #eee" }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:"#666",
+                    marginBottom:10, letterSpacing:"0.06em" }}>
+                    최근 검수 현황
+                  </div>
+                  {mySubmissions.slice(0,3).map(sub => {
+                    const si = {
+                      pending:   { label:"검수 대기", color:"#d97706", bg:"#fffbeb" },
+                      revision:  { label:"수정 요청", color:"#dc2626", bg:"#fef2f2" },
+                      confirmed: { label:"컨펌 완료", color:"#16a34a", bg:"#f0fdf4" },
+                    }[sub.status] || { label:"대기", color:"#999", bg:"#f5f5f5" };
+                    const d = sub.submittedAt?.toDate ? sub.submittedAt.toDate() : new Date();
+                    const da = Math.floor((Date.now() - d) / 86400000);
+                    return (
+                      <div key={sub.id} style={{ display:"flex", alignItems:"center", gap:10,
+                        padding:"8px 0", borderBottom:"1px solid #eee" }}>
+                        <span style={{ fontSize:11, padding:"3px 8px", borderRadius:20,
+                          background:si.bg, color:si.color, fontWeight:700, flexShrink:0 }}>
+                          {si.label}
+                        </span>
+                        <span style={{ fontSize:12, color:"#555", flex:1 }}>
+                          슬라이드 {sub.slideCount || sub.slides?.length || 1}장
+                        </span>
+                        <span style={{ fontSize:11, color:"#bbb" }}>
+                          {da === 0 ? "오늘" : `${da}일 전`}
+                        </span>
+                        {sub.adminComment && sub.status === "revision" && (
+                          <span style={{ fontSize:11, color:"#dc2626", maxWidth:130,
+                            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                            💬 {sub.adminComment}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div style={{ fontSize:13, color:"#555", fontWeight:600, marginBottom:8 }}>
+                메모 <span style={{ fontWeight:400, color:"#aaa" }}>(선택사항)</span>
+              </div>
+              <textarea value={submitNote}
+                onChange={e => setSubmitNote(e.target.value)}
+                placeholder="담당자에게 전달할 내용을 입력하세요.&#10;(예: 2번 슬라이드 배경 이미지 추후 교체 예정)"
+                rows={3}
+                style={{ width:"100%", padding:"12px 14px", fontSize:13, borderRadius:8,
+                  border:"2px solid #e0e0e0", fontFamily:"Pretendard, 'Noto Sans KR', sans-serif",
+                  resize:"none", marginBottom:20, lineHeight:1.65, outline:"none" }}/>
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={handleSubmitReview} disabled={submitting}
+                  style={{ flex:1, padding:"14px 0", borderRadius:8, border:"none",
+                    background: submitting ? "#ccc" : "#f97316", color:"#fff",
+                    fontSize:15, fontWeight:800, cursor: submitting ? "default" : "pointer" }}>
+                  {submitting ? "⏳ 제출 중..." : "📤 검수 요청 보내기"}
+                </button>
+                <button onClick={() => { if (!submitting) setShowSubmitModal(false); }}
+                  style={{ padding:"14px 20px", borderRadius:8, border:"1px solid #ddd",
+                    background:"#f5f5f5", color:"#888", fontSize:14, cursor:"pointer" }}>
+                  취소
+                </button>
+              </div>
+            </>)}
+          </div>
+        </div>
+      )}
       {/* ── API Key Modal ── */}
       {showApiKeyModal && (
         <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.5)",
