@@ -1097,6 +1097,75 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
   };
 
   // ── AI 요약 기능 (Gemini 2.5 Flash) ──
+  // ── AI 요약: 2.5 Flash + 지수 백오프 재시도 ──────────────────
+  const GEMINI_ENDPOINT = (key) =>
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+
+  const GEMINI_PROMPT = (inputText) => `당신은 Blackmagic Design 전문 마케팅 카피라이터입니다.
+아래 텍스트를 분석하여 인스타그램 카드 이미지용 제목과 본문을 작성하세요.
+
+<rules>
+- 제품명·브랜드명은 반드시 영어 원문 유지 (Blackmagic Camera, DaVinci Resolve, PYXIS, HyperDeck, Blackmagic Cloud 등)
+- 제목: 15자 이내, 핵심 키워드 중심, 임팩트 있게
+- 본문: 정확히 5줄, 줄당 20~30자, 핵심 기능·장점 중심
+- 한국어 마케팅 톤 (전문적이고 간결하게)
+- 이모지·불필요한 수식어 금지
+</rules>
+
+<output_format>
+[제목] 여기에 제목
+[본문]
+첫째 줄
+둘째 줄
+셋째 줄
+넷째 줄
+다섯째 줄
+</output_format>
+
+<input>
+${inputText}
+</input>
+
+위 output_format 형식만 출력하세요. 다른 설명 없이.`;
+
+  const callGeminiWithRetry = async (inputText, maxRetry = 3) => {
+    const WAIT_SEC = 7;
+    for (let attempt = 0; attempt < maxRetry; attempt++) {
+      if (attempt > 0) {
+        const waitSec = WAIT_SEC * Math.pow(2, attempt - 1); // 7s → 14s → 28s
+        for (let i = waitSec; i > 0; i--) {
+          setSummarizing(`재시도 중... (${i}초 대기)`);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        setSummarizing("재시도 중...");
+      }
+      const response = await fetch(GEMINI_ENDPOINT(apiKey), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: GEMINI_PROMPT(inputText) }] }],
+          generationConfig: {
+            maxOutputTokens: 1024,
+            temperature: 0.7,
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        }),
+      });
+      if (response.status === 429) {
+        if (attempt === maxRetry - 1) throw new Error("요청 한도 초과입니다. 잠시 후 다시 시도해주세요.");
+        continue; // 다음 루프에서 대기 후 재시도
+      }
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        if (response.status === 400 || response.status === 403) {
+          throw new Error("AUTH_ERROR");
+        }
+        throw new Error(errData.error?.message || `API 오류 (${response.status})`);
+      }
+      return await response.json();
+    }
+  };
+
   const handleSummarize = async () => {
     const headText = cfg.headline?.trim() || "";
     const bodyText = cfg.body?.trim() || "";
@@ -1110,62 +1179,24 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
       setShowApiKeyModal(true);
       return;
     }
-    setSummarizing(true);
+    setSummarizing("AI가 분석 중...");
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `당신은 Blackmagic Design 제품 마케팅 카피라이터입니다. 아래 텍스트로 인스타그램 카드 이미지용 제목과 본문을 만들어주세요.
-
-## 규칙 (반드시 지킬 것)
-1. 회사명과 제품명은 반드시 영어 원문 그대로 유지 (예: Blackmagic Camera, DaVinci Resolve, Blackmagic Cloud, PYXIS, HyperDeck 등)
-2. 제목: 최대 15자 이내. 임팩트 있고 짧게. 핵심 키워드 중심
-3. 본문: 반드시 정확히 5줄. 각 줄은 20~30자 내외로 간결하게
-4. 핵심 기능과 장점 위주로 요약
-5. 전문적이면서도 친근한 한국어 마케팅 톤
-6. 불필요한 수식어, 반복 제거
-7. 이모지 사용 금지
-
-## 출력 형식 (이 형식을 정확히 따를 것)
-[제목] 여기에 제목
-[본문]
-첫째 줄
-둘째 줄
-셋째 줄
-넷째 줄
-다섯째 줄
-
-## 요약할 텍스트
-${inputText}
-
-위 출력 형식대로만 출력하세요. 다른 설명은 넣지 마세요.`
-            }]
-          }],
-          generationConfig: {
-            maxOutputTokens: 1024,
-            temperature: 0.7,
-            thinkingConfig: { thinkingBudget: 0 },
-          }
-        })
-      });
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        if (response.status === 400 || response.status === 403) {
-          alert("API 키가 유효하지 않거나 권한이 없습니다.\n설정에서 다시 입력해주세요.");
-          setApiKey("");
-          try { localStorage.removeItem("bmd_gemini_api_key"); } catch(e) {}
-          setShowApiKeyModal(true);
-          return;
+      // 연속 요청 방지: 이전 요청 후 7초 경과 여부 체크
+      const now = Date.now();
+      const lastCall = handleSummarize._lastCall || 0;
+      const elapsed = now - lastCall;
+      if (elapsed < 7000 && lastCall > 0) {
+        const remain = Math.ceil((7000 - elapsed) / 1000);
+        for (let i = remain; i > 0; i--) {
+          setSummarizing(`잠시 대기 중 (${i}초)...`);
+          await new Promise(r => setTimeout(r, 1000));
         }
-        const msg = errData.error?.message || `API 오류 (${response.status})`;
-        throw new Error(msg);
       }
-      const data = await response.json();
-      const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      handleSummarize._lastCall = Date.now();
+
+      setSummarizing("AI가 분석 중...");
+      const data = await callGeminiWithRetry(inputText);
+      const result = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (result) {
         const headlineMatch = result.match(/\[제목\]\s*(.+)/);
         const bodyMatch = result.match(/\[본문\]\s*\n([\s\S]+)/);
@@ -1179,7 +1210,14 @@ ${inputText}
       }
     } catch (err) {
       console.error("AI 요약 오류:", err);
-      alert("AI 요약 중 오류가 발생했습니다.\n" + err.message);
+      if (err.message === "AUTH_ERROR") {
+        alert("API 키가 유효하지 않거나 권한이 없습니다.\n설정에서 다시 입력해주세요.");
+        setApiKey("");
+        try { localStorage.removeItem("bmd_gemini_api_key"); } catch(e) {}
+        setShowApiKeyModal(true);
+      } else {
+        alert("AI 요약 오류:\n" + err.message);
+      }
     } finally {
       setSummarizing(false);
     }
@@ -1499,7 +1537,7 @@ ${inputText}
                     background: summarizing ? "#e0e0e0" : "#fff",
                     color: summarizing ? "#999" : "#333",
                     transition:"all 0.2s" }}>
-                  {summarizing ? "요약 중..." : "+AI 요약"}
+                  {summarizing ? (typeof summarizing === "string" ? summarizing : "AI가 분석 중...") : "+AI 요약"}
                 </button>
                 <button onClick={() => { setApiKeyInput(apiKey); setShowApiKeyModal(true); }}
                   title="API 키 설정"
