@@ -13,6 +13,7 @@
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script>
   firebase.initializeApp({
     apiKey: "AIzaSyAyet2kDlBg_fVWdQZ9gCrkZTUv8nb0YKw",
@@ -23,6 +24,7 @@
     appId: "1:71301367192:web:e1f6725c48d355ba0397ed"
   });
   const db = firebase.firestore();
+  const auth = firebase.auth();
 </script>
 <style>
   html, body, #root { height:100%; margin:0; overflow:hidden; }
@@ -639,99 +641,213 @@ function LayerSlider({ label, cfgKey, min, max, step, fmt: fmtFn, cfg, setCfg })
 
 // ─── Auth Gate (Firestore 기반) ──────────────────────────────
 function App() {
-  const [authCode,     setAuthCode]     = useState("");
-  const [authInput,    setAuthInput]    = useState("");
-  const [authError,    setAuthError]    = useState("");
-  const [isChecking,   setIsChecking]   = useState(false);
+  const [mode, setMode]           = useState("login"); // "login" | "signup"
+  const [email, setEmail]         = useState("");
+  const [password, setPassword]   = useState("");
+  const [company, setCompany]     = useState("");
+  const [error, setError]         = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [resellerData, setResellerData] = useState(null);
+  const [authUser, setAuthUser]   = useState(null);
 
+  // 세션 유지: 앱 로드 시 로그인 상태 확인
   useEffect(() => {
-    const saved = (() => { try { return localStorage.getItem("bmd_auth_code") || ""; } catch(e) { return ""; } })();
-    if (saved) verifyCode(saved, true);
+    const unsub = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        const doc = await db.collection("resellers").doc(user.uid).get();
+        if (doc.exists && doc.data().status === "approved") {
+          setAuthUser(user);
+          setResellerData({ name: doc.data().name || "", logo: doc.data().logo || "" });
+        } else {
+          auth.signOut();
+        }
+      }
+      setCheckingSession(false);
+    });
+    return () => unsub();
   }, []);
 
-  const verifyCode = async (code, silent = false) => {
-    if (!code || code.length !== 4) return;
-    setIsChecking(true); setAuthError("");
+  const handleLogin = async () => {
+    if (!email || !password) return;
+    setLoading(true); setError("");
     try {
-      const doc = await db.collection("resellers").doc(code).get();
-      if (doc.exists) {
-        const data = doc.data();
-        setResellerData({ name: data.name || "", logo: data.logo || "" });
-        setAuthCode(code);
-        try { localStorage.setItem("bmd_auth_code", code); } catch(e) {}
-      } else {
-        try { localStorage.removeItem("bmd_auth_code"); } catch(e) {}
-        setAuthCode(""); setResellerData(null);
-        if (!silent) setAuthError("등록되지 않은 번호입니다. 하이픽셀플러스에 문의해주세요.");
+      const cred = await auth.signInWithEmailAndPassword(email, password);
+      const doc  = await db.collection("resellers").doc(cred.user.uid).get();
+      if (!doc.exists) {
+        await auth.signOut();
+        setError("등록되지 않은 계정입니다."); return;
       }
-    } catch(err) {
-      if (!silent) setAuthError("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
-    } finally { setIsChecking(false); }
+      const data = doc.data();
+      if (data.status === "pending") {
+        await auth.signOut();
+        setError("가입 신청이 아직 승인 대기 중입니다.\n하이픽셀플러스 담당자 확인 후 연락드립니다."); return;
+      }
+      if (data.status === "rejected") {
+        await auth.signOut();
+        setError("가입이 거절되었습니다. 하이픽셀플러스에 문의해주세요."); return;
+      }
+      setAuthUser(cred.user);
+      setResellerData({ name: data.name || "", logo: data.logo || "" });
+    } catch (e) {
+      const msg = {
+        "auth/user-not-found":  "등록되지 않은 이메일입니다.",
+        "auth/wrong-password":  "비밀번호가 올바르지 않습니다.",
+        "auth/invalid-email":   "이메일 형식이 올바르지 않습니다.",
+        "auth/too-many-requests": "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
+      }[e.code] || "로그인 오류: " + e.message;
+      setError(msg);
+    } finally { setLoading(false); }
   };
 
-  const handleLogin = () => {
-    const code = authInput.trim().replace(/[^0-9]/g, "");
-    if (code.length === 4) verifyCode(code);
+  const handleSignup = async () => {
+    if (!email || !password || !company) { setError("모든 항목을 입력해주세요."); return; }
+    if (password.length < 6) { setError("비밀번호는 6자 이상이어야 합니다."); return; }
+    setLoading(true); setError("");
+    try {
+      const cred = await auth.createUserWithEmailAndPassword(email, password);
+      await db.collection("resellers").doc(cred.user.uid).set({
+        email,
+        name: company,
+        logo: "",
+        status: "pending",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      await auth.signOut();
+      setMode("login");
+      setError(""); 
+      // 성공 메시지를 error 필드 재활용 대신 별도 state로 표시
+      setSignupDone(true);
+    } catch (e) {
+      const msg = {
+        "auth/email-already-in-use": "이미 가입된 이메일입니다.",
+        "auth/invalid-email":        "이메일 형식이 올바르지 않습니다.",
+        "auth/weak-password":        "비밀번호가 너무 약합니다.",
+      }[e.code] || "가입 오류: " + e.message;
+      setError(msg);
+    } finally { setLoading(false); }
   };
+
+  const [signupDone, setSignupDone] = useState(false);
 
   const handleLogout = () => {
-    setAuthCode(""); setResellerData(null); setAuthInput("");
-    try { localStorage.removeItem("bmd_auth_code"); } catch(e) {}
+    auth.signOut();
+    setAuthUser(null); setResellerData(null);
+    setEmail(""); setPassword(""); setCompany("");
   };
 
-  if (isChecking && !authCode) {
+  if (checkingSession) {
     return (
       <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
         background:"#111", flexDirection:"column", gap:16 }}>
         <div style={{ width:32, height:32, border:"3px solid #333", borderTop:"3px solid #fff",
           borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/>
-        <div style={{ color:"#666", fontSize:14 }}>인증 확인 중...</div>
+        <div style={{ color:"#666", fontSize:14 }}>로그인 상태 확인 중...</div>
       </div>
     );
   }
 
-  if (authCode && resellerData) {
+  if (authUser && resellerData) {
     return <MainApp resellerName={resellerData.name} resellerLogo={resellerData.logo}
-      handleLogout={handleLogout} resellerId={authCode} />;
+      handleLogout={handleLogout} resellerId={authUser.uid} />;
   }
+
+  const inputStyle = {
+    width:"100%", padding:"14px 16px", fontSize:15, borderRadius:10,
+    border:"2px solid #e8e8e8", outline:"none", marginBottom:12,
+    fontFamily:"Pretendard, 'Noto Sans KR', sans-serif",
+    transition:"border-color 0.15s",
+  };
 
   return (
     <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
       background:"#111", fontFamily:"Pretendard, 'Noto Sans KR', sans-serif" }}>
-      <div style={{ width:420, padding:"48px 40px", background:"#fff", borderRadius:16,
-        boxShadow:"0 20px 60px rgba(0,0,0,0.3)", textAlign:"center" }}>
-        <div style={{ marginBottom:8 }}>
-          <div style={{ width:8, height:8, background:"#111", borderRadius:"50%", display:"inline-block", marginRight:10 }}/>
-          <span style={{ fontWeight:800, fontSize:16, letterSpacing:"0.12em" }}>BLACKMAGIC DESIGN</span>
+      <div style={{ width:440, padding:"48px 40px", background:"#fff", borderRadius:20,
+        boxShadow:"0 24px 80px rgba(0,0,0,0.35)" }}>
+
+        {/* 로고 영역 */}
+        <div style={{ textAlign:"center", marginBottom:32 }}>
+          <div style={{ display:"inline-flex", alignItems:"center", gap:8, marginBottom:8 }}>
+            <div style={{ width:8, height:8, background:"#111", borderRadius:"50%" }}/>
+            <span style={{ fontWeight:800, fontSize:14, letterSpacing:"0.12em" }}>BLACKMAGIC DESIGN</span>
+          </div>
+          <div style={{ fontSize:13, color:"#bbb" }}>리셀러 이미지 메이커</div>
         </div>
-        <div style={{ fontSize:14, color:"#999", marginBottom:32 }}>리셀러 이미지 메이커</div>
-        <div style={{ fontSize:18, fontWeight:700, color:"#333", marginBottom:8 }}>리셀러 전용</div>
-        <div style={{ fontSize:14, color:"#888", marginBottom:28 }}>등록된 전화번호 뒷자리 4자리를 입력해주세요</div>
-        <input value={authInput}
-          onChange={e => { setAuthInput(e.target.value.replace(/[^0-9]/g, "").slice(0,4)); setAuthError(""); }}
-          onKeyDown={e => e.key === "Enter" && handleLogin()}
-          placeholder="0000" inputMode="numeric" maxLength={4}
-          style={{ width:"100%", padding:"18px 20px", fontSize:32, fontWeight:700,
-            borderRadius:10, border:"2px solid #ddd", outline:"none", textAlign:"center",
-            letterSpacing:"0.3em", marginBottom:12 }}/>
-        {authError && (
-          <div style={{ fontSize:13, color:"#e05555", marginBottom:12, padding:"8px",
-            background:"#fff0f0", borderRadius:6 }}>{authError}</div>
+
+        {/* 탭 */}
+        <div style={{ display:"flex", background:"#f5f5f5", borderRadius:10, padding:4, marginBottom:28 }}>
+          {[{id:"login",label:"로그인"},{id:"signup",label:"가입 신청"}].map(t => (
+            <button key={t.id} onClick={() => { setMode(t.id); setError(""); setSignupDone(false); }}
+              style={{ flex:1, padding:"10px 0", borderRadius:8, border:"none", fontSize:14,
+                fontWeight: mode===t.id ? 700 : 500,
+                background: mode===t.id ? "#fff" : "transparent",
+                color: mode===t.id ? "#111" : "#aaa",
+                boxShadow: mode===t.id ? "0 1px 4px rgba(0,0,0,0.1)" : "none",
+                cursor:"pointer", transition:"all 0.15s" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* 가입 완료 메시지 */}
+        {signupDone && mode === "login" && (
+          <div style={{ fontSize:13, color:"#16a34a", background:"#f0fdf4",
+            border:"1px solid #bbf7d0", borderRadius:8, padding:"12px 14px", marginBottom:16, lineHeight:1.7 }}>
+            ✅ 가입 신청이 완료되었습니다.<br/>
+            하이픽셀플러스 담당자 승인 후 로그인 가능합니다.
+          </div>
         )}
-        <button onClick={handleLogin} disabled={authInput.length < 4 || isChecking}
-          style={{ width:"100%", padding:"16px 0", borderRadius:10, border:"none",
-            background: authInput.length >= 4 && !isChecking ? "#111" : "#ccc",
-            color:"#fff", fontSize:16, fontWeight:800,
-            cursor: authInput.length >= 4 && !isChecking ? "pointer" : "default",
-            letterSpacing:"0.05em", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
-          {isChecking
-            ? (<><div style={{ width:16, height:16, border:"2px solid #666", borderTop:"2px solid #fff",
-                borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/> 확인 중...</>)
-            : "입장하기"}
+
+        {/* 로그인 폼 */}
+        {mode === "login" && (
+          <>
+            <input value={email} onChange={e => { setEmail(e.target.value); setError(""); }}
+              onKeyDown={e => e.key==="Enter" && handleLogin()}
+              placeholder="이메일" type="email" style={inputStyle}/>
+            <input value={password} onChange={e => { setPassword(e.target.value); setError(""); }}
+              onKeyDown={e => e.key==="Enter" && handleLogin()}
+              placeholder="비밀번호" type="password" style={{...inputStyle, marginBottom:20}}/>
+          </>
+        )}
+
+        {/* 가입 폼 */}
+        {mode === "signup" && (
+          <>
+            <input value={company} onChange={e => { setCompany(e.target.value); setError(""); }}
+              placeholder="회사명 (예: 하이픽셀플러스)" style={inputStyle}/>
+            <input value={email} onChange={e => { setEmail(e.target.value); setError(""); }}
+              placeholder="이메일" type="email" style={inputStyle}/>
+            <input value={password} onChange={e => { setPassword(e.target.value); setError(""); }}
+              onKeyDown={e => e.key==="Enter" && handleSignup()}
+              placeholder="비밀번호 (6자 이상)" type="password" style={{...inputStyle, marginBottom:20}}/>
+          </>
+        )}
+
+        {/* 에러 */}
+        {error && (
+          <div style={{ fontSize:13, color:"#dc2626", background:"#fef2f2",
+            border:"1px solid #fecaca", borderRadius:8, padding:"10px 14px",
+            marginBottom:16, lineHeight:1.6, whiteSpace:"pre-line" }}>{error}</div>
+        )}
+
+        {/* 버튼 */}
+        <button
+          onClick={mode === "login" ? handleLogin : handleSignup}
+          disabled={loading}
+          style={{ width:"100%", padding:"16px 0", borderRadius:12, border:"none",
+            background: loading ? "#ccc" : "#111", color:"#fff", fontSize:16,
+            fontWeight:800, cursor: loading ? "default" : "pointer",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+          {loading
+            ? <><div style={{ width:16, height:16, border:"2px solid #888",
+                borderTop:"2px solid #fff", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/> 처리 중...</>
+            : mode === "login" ? "로그인" : "가입 신청하기"}
         </button>
-        <div style={{ marginTop:24, fontSize:12, color:"#bbb", lineHeight:1.8 }}>
-          등록되지 않은 경우<br/>하이픽셀플러스에 문의해주세요
+
+        <div style={{ marginTop:20, fontSize:12, color:"#ccc", textAlign:"center", lineHeight:1.8 }}>
+          {mode === "login"
+            ? "계정이 없으신가요? 위의 '가입 신청' 탭을 이용해주세요."
+            : "승인은 하이픽셀플러스 담당자가 직접 진행합니다."}
         </div>
       </div>
     </div>
@@ -1821,6 +1937,8 @@ ${inputText}
                 r.onload = ev => setCfg({...cfg, logoUrl: ev.target.result});
                 r.readAsDataURL(f);
               }}/>
+            <input ref={fileRef} type="file" accept="image/*" style={{ display:"none" }}
+              onChange={handleFile}/>
             {cfg.logoUrl ? (
               <div style={{ borderRadius:8, overflow:"hidden", marginBottom:14,
                 background:"#2a2a2a", padding:12, display:"flex", alignItems:"center", justifyContent:"center", minHeight:70 }}>
