@@ -872,7 +872,6 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
   const dragAreaRef = useRef(null);
   const dragState  = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [blurMode, setBlurMode] = useState(false);
   const [brushSize, setBrushSize] = useState(40);
   const blurStrokeRef = useRef(null);
 
@@ -900,29 +899,7 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
     if (e.touches) e.preventDefault();
     const p = getPointer(e);
 
-    // ── [NEW] 캔버스 클릭 시 레이어 자동 선택 ──
-    if (!blurMode) {
-      const pt = toCanvasCoords(e);
-      if (pt) {
-        const bounds = calcBounds(cfg, size);
-        const hitOrder = ['headline', 'body', 'branding', 'photo'];
-        const hit = hitOrder.find(lyr => {
-          const b = bounds[lyr];
-          return b && pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h;
-        });
-        if (hit) setSelectedLayer(hit);
-      }
-    }
-
-    if (blurMode) {
-      const pt = toCanvasCoords(e);
-      if (!pt) return;
-      setIsDragging(true);
-      const r = brushSize / 100 * size.w;
-      blurStrokeRef.current = [{ x: pt.x, y: pt.y, r }];
-      updateSlide({ blurStrokes: [...(slide.blurStrokes||[]), blurStrokeRef.current] });
-      return;
-    }
+  
 
     // 사진 영역 클릭 여부를 직접 계산해서 판단
     if (!photoUrl) return;
@@ -943,16 +920,6 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
   const onDragMove = (e) => {
     if (e.touches) e.preventDefault();
 
-    if (blurMode && isDragging && blurStrokeRef.current) {
-      const pt = toCanvasCoords(e);
-      if (!pt) return;
-      const r = brushSize / 100 * size.w;
-      blurStrokeRef.current.push({ x: pt.x, y: pt.y, r });
-      const strokes = [...(slide.blurStrokes||[])];
-      strokes[strokes.length - 1] = [...blurStrokeRef.current];
-      updateSlide({ blurStrokes: strokes });
-      return;
-    }
 
     if (!dragState.current) return;
     const { startX, startY, startOX, startOY } = dragState.current;
@@ -1730,17 +1697,6 @@ ${inputText}
                   </div>
                 );
               })()}
-              {(photoUrl || blurMode) && (
-                <div style={{ position:"absolute", bottom:-24, left:0, right:0,
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:12, color: blurMode ? "#e05555" : "#999", pointerEvents:"none" }}>
-                  <span>{blurMode ? "🖌️ 드래그로 흐리게 칠하기" : "🖱️ 드래그로 위치 조정"}</span>
-                </div>
-              )}
-            </div>
-            <div style={{ fontSize:12, color:"#bbb" }}>{size.w} × {Math.round(estTotalH)}px</div>
-          </div>
-        </div>
 
         {/* ── RIGHT PANEL: Layers + Context ── */}
         <div style={{ width:360, borderLeft:"1px solid #e0e0e0", flexShrink:0, background:"#f5f5f5",
