@@ -716,8 +716,7 @@ function App() {
       await auth.signOut();
       setMode("pending");
       setError(""); 
-      // 성공 메시지를 error 필드 재활용 대신 별도 state로 표시
-      setSignupDone(true);
+      
     } catch (e) {
       const msg = {
         "auth/email-already-in-use": "이미 가입된 이메일입니다.",
