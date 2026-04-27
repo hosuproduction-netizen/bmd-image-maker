@@ -322,7 +322,7 @@ function drawCanvas(canvas, config, size, imgEl) {
     ctx.textAlign="left"; ctx.textBaseline="middle";
     ctx.fillStyle="#ffffff";
     ctx.fillText(config.company||"하이픽셀플러스", fixedPad*0.6, canvasH-stripH/2);
-    ctx.textAlign="right"; ctx.fillStyle="#444";
+    ctx.textAlign="right"; ctx.fillStyle="#ffff";
     ctx.fillText("Blackmagic Design Authorized Reseller", W-fixedPad*0.6, canvasH-stripH/2);
   }
 
@@ -450,7 +450,7 @@ function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillStyle = "#ffffff";
     ctx.fillText(config.company || "하이픽셀플러스", fixedPad * 0.6, H - stripH / 2);
-    ctx.textAlign = "right"; ctx.fillStyle = "#666";
+    ctx.textAlign = "right"; ctx.fillStyle = "#ffff";
     ctx.fillText("Blackmagic Design Authorized Reseller", W - fixedPad * 0.6, H - stripH / 2);
   }
 
