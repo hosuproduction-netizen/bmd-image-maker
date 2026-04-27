@@ -1662,29 +1662,6 @@ ${inputText}
                 카드 4:5
               </div>
             </div>
-            <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-              <button onClick={() => setBlurMode(!blurMode)}
-                style={{ padding:"8px 16px", borderRadius:6, fontSize:13, fontWeight:700,
-                  cursor:"pointer", border: blurMode ? "2px solid #e05555" : "2px solid #ccc",
-                  background: blurMode ? "#fff0f0" : "#fff",
-                  color: blurMode ? "#e05555" : "#888" }}>
-                {blurMode ? "🔴 흐리게 켜짐" : "🟡 흐리게"}
-              </button>
-              {blurMode && (<>
-                <div style={{ display:"flex", alignItems:"center", gap:6, background:"#f8f8f8",
-                  border:"1px solid #ddd", borderRadius:6, padding:"4px 10px" }}>
-                  <span style={{ fontSize:12, color:"#888" }}>크기</span>
-                  <input type="range" min="1" max="100" step="1" value={brushSize}
-                    onChange={e => setBrushSize(parseInt(e.target.value))}
-                    style={{ width:80, accentColor:"#e05555" }}/>
-                  <span style={{ fontSize:12, color:"#666", minWidth:30 }}>{brushSize}</span>
-                </div>
-                {(slide.blurStrokes||[]).length > 0 && (
-                  <button onClick={() => updateSlide({ blurStrokes: [] })}
-                    style={{ padding:"6px 12px", borderRadius:5, fontSize:12, fontWeight:600,
-                      cursor:"pointer", border:"1px solid #ddd", background:"#fff", color:"#888" }}>
-                    흐리게 지우기
-                  </button>
                 )}
               </>)}
               <span style={{ fontSize:12, color:"#999", fontWeight:600, padding:"6px 10px",
