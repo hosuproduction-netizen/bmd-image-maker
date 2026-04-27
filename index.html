@@ -57,27 +57,28 @@ const ACCENTS = [
 // ─── 프리셋 ─────────────────────────────────────────────────────
 const PRESETS = [
   {
-    id: "custom1",
+    id: "custom2",
     label: "커스텀 1",
     values: {
       layout: "split",
-      imgScale: 1.62, imgOffsetX: -0.29, imgOffsetY: 0,
+      imgScale: 1, imgOffsetX: 0, imgOffsetY: 0,
       headSizeScale: 1.50,
       bodySizeScale: 1.05, bodyLineHeight: 1.0, textGap: 0,
       textAlign: "center", textVAlign: 0, textPadX: 0.06,
     },
   },
   {
-    id: "custom2",
+    id: "custom1",
     label: "커스텀 2",
     values: {
       layout: "overlay",
-      imgScale: 1.62, imgOffsetX: -0.29, imgOffsetY: 0,
+      imgScale: 1, imgOffsetX: 0, imgOffsetY: 0,
       headSizeScale: 1.25,
       bodySizeScale: 0.70, bodyLineHeight: 0.9, textGap: 0,
       textAlign: "left", textVAlign: 0.9, textPadX: 0.02,
     },
   },
+  
 ];
 
 // ─── helpers ────────────────────────────────────────────────────
@@ -204,8 +205,28 @@ function calcBounds(config, size) {
 }
 
 
-// ─── Canvas draw ────────────────────────────────────────────────
-function drawCanvas(canvas, config, size, imgEl) {
+// ─── Logo draw helper ───────────────────────────────────────────
+function drawLogo(ctx, W, canvasH, config, logoImgEl) {
+  if (!logoImgEl || !config.logoUrl) return;
+  const scale   = config.logoScale ?? 1;
+  const opacity = config.logoOpacity ?? 1;
+  const pos     = config.logoPos ?? "top-right";
+  const pad     = Math.round(W * 0.04);
+  const maxW    = Math.round(W * 0.18 * scale);
+  const maxH    = Math.round(W * 0.09 * scale);
+  const iR      = logoImgEl.width / logoImgEl.height;
+  let lW, lH;
+  if (iR > maxW / maxH) { lW = maxW; lH = Math.round(maxW / iR); }
+  else                   { lH = maxH; lW = Math.round(maxH * iR); }
+  const lX = pos.includes("right") ? W - pad - lW : pad;
+  const lY = pos.includes("bottom") ? canvasH - pad - lH : pad;
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.drawImage(logoImgEl, lX, lY, lW, lH);
+  ctx.restore();
+}
+
+function drawCanvas(canvas, config, size, imgEl, logoImgEl) {
   const ctx = canvas.getContext("2d");
   const W = size.w, H = size.h;
 
@@ -215,7 +236,7 @@ function drawCanvas(canvas, config, size, imgEl) {
 
   if (layout === "overlay") {
     canvas.width = W; canvas.height = H;
-    return drawOverlay(ctx, W, H, config, imgEl, accent, pad);
+    return drawOverlay(ctx, W, H, config, imgEl, accent, pad, logoImgEl);
   }
 
   const manualRatio = config.photoRatio ?? 0.60;
@@ -348,15 +369,16 @@ function drawCanvas(canvas, config, size, imgEl) {
     ctx.textAlign="left"; ctx.textBaseline="middle";
     ctx.fillStyle="#ffffff";
     ctx.fillText(config.company||"하이픽셀플러스", fixedPad*0.6, canvasH-stripH/2);
-    ctx.textAlign="right"; ctx.fillStyle="#444";
+    ctx.textAlign="right"; ctx.fillStyle="#fffff";
     ctx.fillText("Blackmagic Design Authorized Reseller", W-fixedPad*0.6, canvasH-stripH/2);
   }
 
   ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  drawLogo(ctx, W, canvasH, config, logoImgEl);
 }
 
 // ─── Overlay mode draw ──────────────────────────────────────────
-function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
+function drawOverlay(ctx, W, H, config, imgEl, accent, pad, logoImgEl) {
   const stripH = config.showBranding ? Math.round(H*0.042) : 0;
   const gradStart = config.overlayStart ?? 0.35;
   const textPadX = W * (config.textPadX ?? 0.08);
@@ -476,11 +498,12 @@ function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillStyle = "#ffffff";
     ctx.fillText(config.company || "하이픽셀플러스", fixedPad * 0.6, H - stripH / 2);
-    ctx.textAlign = "right"; ctx.fillStyle = "#666";
+    ctx.textAlign = "right"; ctx.fillStyle = "#fffff";
     ctx.fillText("Blackmagic Design Authorized Reseller", W - fixedPad * 0.6, H - stripH / 2);
   }
 
   ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  drawLogo(ctx, W, H, config, logoImgEl);
 }
 
 // ─── Gaussian blur brush ─────────────────────────────────────────
@@ -541,12 +564,13 @@ try {
 function CanvasPreview({ config, size, scale, exportRef }) {
   const canvasRef = useRef(null);
   const imgRef    = useRef(null);
+  const logoRef   = useRef(null);
   const [canvasH, setCanvasH] = useState(size.h);
   if (exportRef) exportRef.current = canvasRef;
 
   const redraw = useCallback(() => {
     if (canvasRef.current) {
-      drawCanvas(canvasRef.current, config, size, imgRef.current);
+      drawCanvas(canvasRef.current, config, size, imgRef.current, logoRef.current);
       applyMosaic(canvasRef.current, config.blurStrokes);
       setCanvasH(canvasRef.current.height);
     }
@@ -573,23 +597,31 @@ function CanvasPreview({ config, size, scale, exportRef }) {
     } else {
       imgRef.current = null; redraw();
     }
-  }, [config, size, redraw]);
+  }, [config.photoUrl, size, redraw]);
+
+  useEffect(() => {
+    if (config.logoUrl) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => { logoRef.current = img; redraw(); };
+      img.onerror = () => {
+        const img2 = new Image();
+        img2.onload = () => { logoRef.current = img2; redraw(); };
+        img2.src = config.logoUrl;
+      };
+      img.src = config.logoUrl;
+    } else {
+      logoRef.current = null; redraw();
+    }
+  }, [config.logoUrl, redraw]);
+
+  useEffect(() => { redraw(); }, [config, redraw]);
 
   return (
     <canvas ref={canvasRef}
       style={{ width: size.w*scale, height: canvasH*scale, display:"block", borderRadius:4 }} />
   );
 }
-
-// ─── Reseller codes ────────────────────────────────────────────
-const RESELLER_CODES = {
-  "1234": { name: "디지털e세상",     logo: "" },
-  "5678": { name: "영상장비나라",     logo: "" },
-  "9012": { name: "프로미디어",       logo: "" },
-  "3456": { name: "스튜디오킹",       logo: "" },
-  "7890": { name: "비디오프로",       logo: "" },
-  "3515": { name: "하이픽셀플러스",   logo: "https://raw.githubusercontent.com/hosuproduction-netizen/bmd-image-maker/main/images/hipixel-logo.png" },
-};
 
 function LayerSlider({ label, cfgKey, min, max, step, fmt: fmtFn, cfg, setCfg }) {
   return (
@@ -605,78 +637,105 @@ function LayerSlider({ label, cfgKey, min, max, step, fmt: fmtFn, cfg, setCfg })
   );
 }
 
-// ─── Auth Gate ──────────────────────────────────────────────
+// ─── Auth Gate (Firestore 기반) ──────────────────────────────
 function App() {
-  const [authCode, setAuthCode] = useState(() => {
-    try { return localStorage.getItem("bmd_auth_code") || ""; } catch(e) { return ""; }
-  });
-  const [authInput, setAuthInput] = useState("");
-  const [authError, setAuthError] = useState("");
+  const [authCode,     setAuthCode]     = useState("");
+  const [authInput,    setAuthInput]    = useState("");
+  const [authError,    setAuthError]    = useState("");
+  const [isChecking,   setIsChecking]   = useState(false);
+  const [resellerData, setResellerData] = useState(null);
 
-  const isAuthed = !!RESELLER_CODES[authCode];
-  const resellerName = RESELLER_CODES[authCode]?.name || "";
-  const resellerLogo = RESELLER_CODES[authCode]?.logo || "";
+  useEffect(() => {
+    const saved = (() => { try { return localStorage.getItem("bmd_auth_code") || ""; } catch(e) { return ""; } })();
+    if (saved) verifyCode(saved, true);
+  }, []);
+
+  const verifyCode = async (code, silent = false) => {
+    if (!code || code.length !== 4) return;
+    setIsChecking(true); setAuthError("");
+    try {
+      const doc = await db.collection("resellers").doc(code).get();
+      if (doc.exists) {
+        const data = doc.data();
+        setResellerData({ name: data.name || "", logo: data.logo || "" });
+        setAuthCode(code);
+        try { localStorage.setItem("bmd_auth_code", code); } catch(e) {}
+      } else {
+        try { localStorage.removeItem("bmd_auth_code"); } catch(e) {}
+        setAuthCode(""); setResellerData(null);
+        if (!silent) setAuthError("등록되지 않은 번호입니다. 하이픽셀플러스에 문의해주세요.");
+      }
+    } catch(err) {
+      if (!silent) setAuthError("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+    } finally { setIsChecking(false); }
+  };
 
   const handleLogin = () => {
     const code = authInput.trim().replace(/[^0-9]/g, "");
-    if (RESELLER_CODES[code]) {
-      setAuthCode(code);
-      try { localStorage.setItem("bmd_auth_code", code); } catch(e) {}
-      setAuthError("");
-    } else {
-      setAuthError("등록되지 않은 번호입니다. 하이픽셀플러스에 문의해주세요.");
-    }
+    if (code.length === 4) verifyCode(code);
   };
 
   const handleLogout = () => {
-    setAuthCode("");
+    setAuthCode(""); setResellerData(null); setAuthInput("");
     try { localStorage.removeItem("bmd_auth_code"); } catch(e) {}
   };
 
-  if (!isAuthed) {
+  if (isChecking && !authCode) {
     return (
       <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
-        background:"#111", fontFamily:"Pretendard, 'Noto Sans KR', sans-serif" }}>
-        <div style={{ width:420, padding:"48px 40px", background:"#fff", borderRadius:16,
-          boxShadow:"0 20px 60px rgba(0,0,0,0.3)", textAlign:"center" }}>
-          <div style={{ marginBottom:8 }}>
-            <div style={{ width:8, height:8, background:"#111", borderRadius:"50%", display:"inline-block", marginRight:10 }}/>
-            <span style={{ fontWeight:800, fontSize:16, letterSpacing:"0.12em" }}>BLACKMAGIC DESIGN</span>
-          </div>
-          <div style={{ fontSize:14, color:"#999", marginBottom:32 }}>리셀러 이미지 메이커</div>
-          <div style={{ fontSize:18, fontWeight:700, color:"#333", marginBottom:8 }}>리셀러 전용</div>
-          <div style={{ fontSize:14, color:"#888", marginBottom:28 }}>
-            등록된 전화번호 뒷자리 4자리를 입력해주세요
-          </div>
-          <input value={authInput}
-            onChange={e => { setAuthInput(e.target.value.replace(/[^0-9]/g, "").slice(0,4)); setAuthError(""); }}
-            onKeyDown={e => e.key === "Enter" && handleLogin()}
-            placeholder="0000"
-            inputMode="numeric"
-            maxLength={4}
-            style={{ width:"100%", padding:"18px 20px", fontSize:32, fontWeight:700,
-              borderRadius:10, border:"2px solid #ddd", outline:"none", textAlign:"center",
-              letterSpacing:"0.3em", marginBottom:12 }}/>
-          {authError && (
-            <div style={{ fontSize:13, color:"#e05555", marginBottom:12, padding:"8px",
-              background:"#fff0f0", borderRadius:6 }}>{authError}</div>
-          )}
-          <button onClick={handleLogin}
-            disabled={authInput.length < 4}
-            style={{ width:"100%", padding:"16px 0", borderRadius:10, border:"none",
-              background: authInput.length >= 4 ? "#111" : "#ccc", color:"#fff", fontSize:16, fontWeight:800,
-              cursor: authInput.length >= 4 ? "pointer" : "default", letterSpacing:"0.05em" }}>
-            입장하기
-          </button>
-          <div style={{ marginTop:24, fontSize:12, color:"#bbb", lineHeight:1.8 }}>
-            등록되지 않은 경우<br/>하이픽셀플러스에 문의해주세요
-          </div>
-        </div>
+        background:"#111", flexDirection:"column", gap:16 }}>
+        <div style={{ width:32, height:32, border:"3px solid #333", borderTop:"3px solid #fff",
+          borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/>
+        <div style={{ color:"#666", fontSize:14 }}>인증 확인 중...</div>
       </div>
     );
   }
 
-  return <MainApp resellerName={resellerName} resellerLogo={resellerLogo} handleLogout={handleLogout} resellerId={authCode} />;
+  if (authCode && resellerData) {
+    return <MainApp resellerName={resellerData.name} resellerLogo={resellerData.logo}
+      handleLogout={handleLogout} resellerId={authCode} />;
+  }
+
+  return (
+    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
+      background:"#111", fontFamily:"Pretendard, 'Noto Sans KR', sans-serif" }}>
+      <div style={{ width:420, padding:"48px 40px", background:"#fff", borderRadius:16,
+        boxShadow:"0 20px 60px rgba(0,0,0,0.3)", textAlign:"center" }}>
+        <div style={{ marginBottom:8 }}>
+          <div style={{ width:8, height:8, background:"#111", borderRadius:"50%", display:"inline-block", marginRight:10 }}/>
+          <span style={{ fontWeight:800, fontSize:16, letterSpacing:"0.12em" }}>BLACKMAGIC DESIGN</span>
+        </div>
+        <div style={{ fontSize:14, color:"#999", marginBottom:32 }}>리셀러 이미지 메이커</div>
+        <div style={{ fontSize:18, fontWeight:700, color:"#333", marginBottom:8 }}>리셀러 전용</div>
+        <div style={{ fontSize:14, color:"#888", marginBottom:28 }}>등록된 전화번호 뒷자리 4자리를 입력해주세요</div>
+        <input value={authInput}
+          onChange={e => { setAuthInput(e.target.value.replace(/[^0-9]/g, "").slice(0,4)); setAuthError(""); }}
+          onKeyDown={e => e.key === "Enter" && handleLogin()}
+          placeholder="0000" inputMode="numeric" maxLength={4}
+          style={{ width:"100%", padding:"18px 20px", fontSize:32, fontWeight:700,
+            borderRadius:10, border:"2px solid #ddd", outline:"none", textAlign:"center",
+            letterSpacing:"0.3em", marginBottom:12 }}/>
+        {authError && (
+          <div style={{ fontSize:13, color:"#e05555", marginBottom:12, padding:"8px",
+            background:"#fff0f0", borderRadius:6 }}>{authError}</div>
+        )}
+        <button onClick={handleLogin} disabled={authInput.length < 4 || isChecking}
+          style={{ width:"100%", padding:"16px 0", borderRadius:10, border:"none",
+            background: authInput.length >= 4 && !isChecking ? "#111" : "#ccc",
+            color:"#fff", fontSize:16, fontWeight:800,
+            cursor: authInput.length >= 4 && !isChecking ? "pointer" : "default",
+            letterSpacing:"0.05em", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+          {isChecking
+            ? (<><div style={{ width:16, height:16, border:"2px solid #666", borderTop:"2px solid #fff",
+                borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/> 확인 중...</>)
+            : "입장하기"}
+        </button>
+        <div style={{ marginTop:24, fontSize:12, color:"#bbb", lineHeight:1.8 }}>
+          등록되지 않은 경우<br/>하이픽셀플러스에 문의해주세요
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Main App ────────────────────────────────────────────────
@@ -740,13 +799,22 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
     company: savedCompany || resellerName || "하이픽셀플러스", headSizeScale: 1, bodySizeScale: 1,
     textGap: 1, textVAlign: 0, bodyLineHeight: 1,
     layout: "split", overlayStart: 0.35, textPadX: 0.08,
-    showBadge: false, textAlign: "center", freePos: false,
+    showBadge: false, textAlign: "center",
     badgeScale: 1,
+    logoUrl: (() => { try { return localStorage.getItem("bmd_logo_url") || null; } catch(e) { return null; } })(),
+    logoScale: 1, logoOpacity: 1, logoPos: "top-right",
   });
 
   useEffect(() => {
     try { localStorage.setItem("bmd_company", shared.company); } catch(e) {}
   }, [shared.company]);
+
+  useEffect(() => {
+    try {
+      if (shared.logoUrl) { localStorage.setItem("bmd_logo_url", shared.logoUrl); }
+      else { localStorage.removeItem("bmd_logo_url"); }
+    } catch(e) {}
+  }, [shared.logoUrl]);
 
   const slide    = slides[activeSlide] ?? slides[0];
   const photoUrl = slide.photoUrl;
@@ -798,11 +866,14 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
     setActiveSlide(Math.min(activeSlide, slides.length - 2));
   };
 
-  const fileRef    = useRef(null);
-  const exportRef  = useRef(null);
+  const fileRef     = useRef(null);
+  const logoFileRef = useRef(null);
+  const exportRef   = useRef(null);
   const dragAreaRef = useRef(null);
   const dragState  = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [blurMode, setBlurMode] = useState(false);
+  const [brushSize, setBrushSize] = useState(40);
   const blurStrokeRef = useRef(null);
 
   const getPointer = (e) => {
@@ -829,16 +900,28 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
     if (e.touches) e.preventDefault();
     const p = getPointer(e);
 
-    // 캔버스 클릭 시 레이어 자동 선택
-    const pt = toCanvasCoords(e);
-    if (pt) {
-      const bounds = calcBounds(cfg, size);
-      const hitOrder = ['headline', 'body', 'branding', 'photo'];
-      const hit = hitOrder.find(lyr => {
-        const b = bounds[lyr];
-        return b && pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h;
-      });
-      if (hit) setSelectedLayer(hit);
+    // ── [NEW] 캔버스 클릭 시 레이어 자동 선택 ──
+    if (!blurMode) {
+      const pt = toCanvasCoords(e);
+      if (pt) {
+        const bounds = calcBounds(cfg, size);
+        const hitOrder = ['headline', 'body', 'branding', 'photo'];
+        const hit = hitOrder.find(lyr => {
+          const b = bounds[lyr];
+          return b && pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h;
+        });
+        if (hit) setSelectedLayer(hit);
+      }
+    }
+
+    if (blurMode) {
+      const pt = toCanvasCoords(e);
+      if (!pt) return;
+      setIsDragging(true);
+      const r = brushSize / 100 * size.w;
+      blurStrokeRef.current = [{ x: pt.x, y: pt.y, r }];
+      updateSlide({ blurStrokes: [...(slide.blurStrokes||[]), blurStrokeRef.current] });
+      return;
     }
 
     // 사진 영역 클릭 여부를 직접 계산해서 판단
@@ -855,16 +938,21 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
       startX: p.clientX, startY: p.clientY,
       startOX: cfg.imgOffsetX, startOY: cfg.imgOffsetY,
     };
-    dragState.current = {
-      startX: p.clientX,
-      startY: p.clientY,
-      startOX: cfg.imgOffsetX,
-      startOY: cfg.imgOffsetY,
-    };
   };
 
   const onDragMove = (e) => {
     if (e.touches) e.preventDefault();
+
+    if (blurMode && isDragging && blurStrokeRef.current) {
+      const pt = toCanvasCoords(e);
+      if (!pt) return;
+      const r = brushSize / 100 * size.w;
+      blurStrokeRef.current.push({ x: pt.x, y: pt.y, r });
+      const strokes = [...(slide.blurStrokes||[])];
+      strokes[strokes.length - 1] = [...blurStrokeRef.current];
+      updateSlide({ blurStrokes: strokes });
+      return;
+    }
 
     if (!dragState.current) return;
     const { startX, startY, startOX, startOY } = dragState.current;
@@ -883,7 +971,6 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
   const onDragEnd = () => {
     dragState.current = null;
     blurStrokeRef.current = null;
-    textDragRef.current = null;
     setIsDragging(false);
   };
 
@@ -1242,10 +1329,11 @@ ${inputText}
 
   // ── 레이어 목록 ──
   const layers = [
+    { id: 'logo',     label: '회사 로고',   icon: '🏷️' },
     { id: 'photo',    label: '배경 이미지', icon: '🖼️' },
-    { id: 'headline', label: '제목',    icon: '✏️' },
-    { id: 'body',     label: '본문',       icon: '📝' },
-    { id: 'align',    label: '정렬',       icon: '↔️' },
+    { id: 'headline', label: '제목',        icon: '✏️' },
+    { id: 'body',     label: '본문',        icon: '📝' },
+    { id: 'align',    label: '정렬',        icon: '↔️' },
     ...(cfg.showBranding ? [{ id: 'branding', label: '브랜딩 바', icon: '🏢' }] : []),
   ];
 
@@ -1353,12 +1441,21 @@ ${inputText}
   const downloadAll = async () => {
     const ext = fmt === "jpeg" ? "jpg" : "png";
     const mime = fmt === "jpeg" ? "image/jpeg" : "image/png";
+    let logoImgEl = null;
+    if (shared.logoUrl) {
+      await new Promise(res => {
+        const img = new Image(); img.crossOrigin = "anonymous";
+        img.onload = () => { logoImgEl = img; res(); };
+        img.onerror = () => res();
+        img.src = shared.logoUrl;
+      });
+    }
     for (let i = 0; i < slides.length; i++) {
       const s = slides[i];
       await new Promise(resolve => {
         const canvas = document.createElement("canvas");
         const loadAndDraw = (imgEl) => {
-          drawCanvas(canvas, { ...shared, ...s }, size, imgEl);
+          drawCanvas(canvas, { ...shared, ...s }, size, imgEl, logoImgEl);
           applyMosaic(canvas, s.blurStrokes);
           const dataUrl = fmt === "jpeg" ? canvas.toDataURL(mime, 0.95) : canvas.toDataURL(mime);
           const blobUrl = injectMetadata(dataUrl, mime);
@@ -1370,14 +1467,11 @@ ${inputText}
           }, 0);
         };
         if (s.photoUrl) {
-          const img = new Image();
-          img.crossOrigin = "anonymous";
+          const img = new Image(); img.crossOrigin = "anonymous";
           img.onload = () => loadAndDraw(img);
           img.onerror = () => loadAndDraw(null);
           img.src = s.photoUrl;
-        } else {
-          loadAndDraw(null);
-        }
+        } else { loadAndDraw(null); }
       });
     }
   };
@@ -1568,7 +1662,7 @@ ${inputText}
                 카드 4:5
               </div>
             </div>
-            <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+              </>)}
               <span style={{ fontSize:12, color:"#999", fontWeight:600, padding:"6px 10px",
                 background:"#f0f0f0", borderRadius:5 }}>PNG</span>
               <button onClick={download}
@@ -1599,7 +1693,7 @@ ${inputText}
                 onTouchEnd={onDragEnd} onTouchCancel={onDragEnd}
                 style={{ boxShadow:"0 0 0 1px #ddd, 0 8px 32px rgba(0,0,0,0.15)",
                   borderRadius:5, overflow:"hidden",
-                  cursor: photoUrl ? (isDragging ? "grabbing" : "grab") : "default",
+                  cursor: blurMode ? "crosshair" : (photoUrl ? (isDragging ? "grabbing" : "grab") : "default"),
                   userSelect:"none", touchAction:"none" }}>
                 <CanvasPreview config={fullCfg} size={size} scale={previewScale} exportRef={exportRef}/>
               </div>
@@ -1636,11 +1730,11 @@ ${inputText}
                   </div>
                 );
               })()}
-              {photoUrl && (
+              {(photoUrl || blurMode) && (
                 <div style={{ position:"absolute", bottom:-24, left:0, right:0,
                   display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:12, color:"#999", pointerEvents:"none" }}>
-                  <span>🖱️ 드래그로 위치 조정</span>
+                  fontSize:12, color: blurMode ? "#e05555" : "#999", pointerEvents:"none" }}>
+                  <span>{blurMode ? "🖌️ 드래그로 흐리게 칠하기" : "🖱️ 드래그로 위치 조정"}</span>
                 </div>
               )}
             </div>
@@ -1678,6 +1772,80 @@ ${inputText}
 
           {/* 컨텍스트 컨트롤 */}
           <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px" }}>
+
+          {/* ── 회사 로고 ── */}
+          {selectedLayer === "logo" && (<>
+            <div style={{ fontSize:11, color:"#aaa", fontWeight:800, letterSpacing:"0.1em", marginBottom:12 }}>회사 로고 업로드</div>
+            <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+              <button onClick={() => logoFileRef.current?.click()}
+                style={{ flex:1, padding:"11px 0", borderRadius:6, fontSize:13, fontWeight:600,
+                  cursor:"pointer", background:"#222", color:"#fff", border:"none" }}>
+                📁 로고 선택
+              </button>
+              {cfg.logoUrl && (
+                <button onClick={() => setCfg({...cfg, logoUrl:null})}
+                  style={{ padding:"11px 14px", borderRadius:6, fontSize:13,
+                    cursor:"pointer", background:"#fff", color:"#e05555", border:"1.5px solid #ffcccc" }}>
+                  ✕
+                </button>
+              )}
+            </div>
+            {cfg.logoUrl && (
+              <div style={{ fontSize:11, color:"#16a34a", marginBottom:8,
+                display:"flex", alignItems:"center", gap:4 }}>
+                <span>✅</span> 로고 저장됨 — 다음에도 자동 불러옵니다
+              </div>
+            )}
+            <input ref={logoFileRef} type="file" accept="image/*" style={{ display:"none" }}
+              onChange={e => {
+                const f = e.target.files[0]; if (!f) return;
+                const r = new FileReader();
+                r.onload = ev => setCfg({...cfg, logoUrl: ev.target.result});
+                r.readAsDataURL(f);
+              }}/>
+            {cfg.logoUrl ? (
+              <div style={{ borderRadius:8, overflow:"hidden", marginBottom:14,
+                background:"#2a2a2a", padding:12, display:"flex", alignItems:"center", justifyContent:"center", minHeight:70 }}>
+                <img src={cfg.logoUrl} style={{ maxWidth:"100%", maxHeight:60, objectFit:"contain" }}/>
+              </div>
+            ) : (
+              <div onClick={() => logoFileRef.current?.click()}
+                style={{ border:"2px dashed #ccc", borderRadius:8, background:"#ebebeb",
+                  cursor:"pointer", padding:"18px 0", textAlign:"center", marginBottom:14 }}>
+                <div style={{ fontSize:24, marginBottom:4 }}>🏷️</div>
+                <div style={{ fontSize:12, color:"#aaa" }}>PNG 권장 (투명 배경)</div>
+              </div>
+            )}
+            <div style={{ height:1, background:"#e0e0e0", margin:"0 0 14px" }}/>
+            <div style={{ fontSize:11, color:"#aaa", fontWeight:800, letterSpacing:"0.1em", marginBottom:12 }}>위치</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:14 }}>
+              {[
+                {id:"top-left",    label:"↖ 좌상단"},
+                {id:"top-right",   label:"↗ 우상단"},
+                {id:"bottom-left", label:"↙ 좌하단"},
+                {id:"bottom-right",label:"↘ 우하단"},
+              ].map(p => (
+                <button key={p.id} onClick={() => setCfg({...cfg, logoPos:p.id})}
+                  style={{ padding:"9px 0", borderRadius:6, fontSize:12, fontWeight:700, cursor:"pointer",
+                    border: cfg.logoPos===p.id ? "2px solid #222" : "2px solid #d8d8d8",
+                    background: cfg.logoPos===p.id ? "#222" : "#f0f0f0",
+                    color: cfg.logoPos===p.id ? "#fff" : "#999" }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ height:1, background:"#e0e0e0", margin:"0 0 14px" }}/>
+            <div style={{ fontSize:11, color:"#aaa", fontWeight:800, letterSpacing:"0.1em", marginBottom:12 }}>크기 · 투명도</div>
+            <LayerSlider label="크기" cfgKey="logoScale" min={0.3} max={3} step={0.05}
+              fmt={v => Math.round(v*100)+"%"} cfg={cfg} setCfg={setCfg}/>
+            <LayerSlider label="투명도" cfgKey="logoOpacity" min={0.1} max={1} step={0.05}
+              fmt={v => Math.round(v*100)+"%"} cfg={cfg} setCfg={setCfg}/>
+            <button onClick={() => setCfg({...cfg, logoScale:1, logoOpacity:1, logoPos:"top-right"})}
+              style={{ width:"100%", marginTop:10, padding:"8px 0", borderRadius:6, fontSize:12,
+                fontWeight:600, cursor:"pointer", border:"1px solid #d4d4d4", background:"#fff", color:"#888" }}>
+              로고 초기화
+            </button>
+          </>)}
 
           {/* ── 배경 이미지 ── */}
           {selectedLayer === "photo" && (<>
@@ -1790,34 +1958,9 @@ ${inputText}
               style={{ width:"100%", background:"#e8e8e8", border:"1px solid #d0d0d0",
                 color:"#333", fontSize:14, padding:"12px 14px", borderRadius:6,
                 fontFamily:"Pretendard, 'Noto Sans KR', sans-serif", outline:"none", resize:"vertical", lineHeight:1.7, marginBottom:14 }} />
-
-            <div style={{ height:1, background:"#e0e0e0", margin:"0 0 12px" }}/>
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, cursor:"pointer" }}
-              onClick={() => {
-                const turning_on = !cfg.showBadge;
-                const patch = { showBadge: turning_on };
-                if (turning_on && !cfg.badge?.trim()) patch.badge = cfg.layout==="overlay" ? "DaVinci Resolve" : "NEW ARRIVAL";
-                setCfg({...cfg, ...patch});
-              }}>
-              <div style={{ width:20, height:20, borderRadius:4, border:"2px solid #bbb",
-                background: cfg.showBadge ? "#222" : "#fff",
-                display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                {cfg.showBadge && <span style={{ color:"#fff", fontSize:12, fontWeight:700 }}>✓</span>}
-              </div>
-              <span style={{ fontSize:13, color:"#555", fontWeight:600 }}>
-                {cfg.layout==="overlay" ? "작은 제목 추가" : "띠 문구 추가"}
-              </span>
-            </div>
-            {cfg.showBadge && (
-              <input value={cfg.badge} placeholder={cfg.layout==="overlay" ? "DaVinci Resolve" : "NEW ARRIVAL"}
-                onChange={e => setCfg({...cfg, badge:e.target.value})}
-                style={{ width:"100%", background:"#e8e8e8", border:"1px solid #d0d0d0",
-                  color:"#333", fontSize:14, padding:"11px 14px", borderRadius:6, outline:"none", marginBottom:8 }} />
-            )}
-            {cfg.showBadge && (
-              <LayerSlider label="크기" cfgKey="badgeScale" min={0.5} max={2} step={0.05}
-                fmt={v => Math.round(v*100)+"%"} cfg={cfg} setCfg={setCfg}/>
-            )}
+            
+            <div style={{ height:1, background:"#e0e0e0", margin:"0 0 14px" }}/>
+            <div style={{ fontSize:15, color:"#aaa", fontWeight:800, letterSpacing:"0.1em", marginBottom:12 }}>제목 색상</div>
             <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", position:"relative" }}>
               {ACCENTS.map(a => (
                 <button key={a.id} onClick={() => setCfg({...cfg, accentColor:a.hex})} title={a.label}
@@ -1862,6 +2005,34 @@ ${inputText}
                 fontWeight:600, cursor:"pointer", border:"1px solid #d4d4d4", background:"#fff", color:"#888" }}>
               제목 초기화
             </button>
+
+            <div style={{ height:1, background:"#e0e0e0", margin:"14px 0 12px" }}/>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, cursor:"pointer" }}
+              onClick={() => {
+                const turning_on = !cfg.showBadge;
+                const patch = { showBadge: turning_on };
+                if (turning_on && !cfg.badge?.trim()) patch.badge = cfg.layout==="overlay" ? "DaVinci Resolve" : "NEW ARRIVAL";
+                setCfg({...cfg, ...patch});
+              }}>
+              <div style={{ width:20, height:20, borderRadius:4, border:"2px solid #bbb",
+                background: cfg.showBadge ? "#222" : "#fff",
+                display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                {cfg.showBadge && <span style={{ color:"#fff", fontSize:12, fontWeight:700 }}>✓</span>}
+              </div>
+              <span style={{ fontSize:13, color:"#555", fontWeight:600 }}>
+                {cfg.layout==="overlay" ? "작은 제목 추가" : "띠 문구 추가"}
+              </span>
+            </div>
+            {cfg.showBadge && (
+              <input value={cfg.badge} placeholder={cfg.layout==="overlay" ? "DaVinci Resolve" : "NEW ARRIVAL"}
+                onChange={e => setCfg({...cfg, badge:e.target.value})}
+                style={{ width:"100%", background:"#e8e8e8", border:"1px solid #d0d0d0",
+                  color:"#333", fontSize:14, padding:"11px 14px", borderRadius:6, outline:"none", marginBottom:8 }} />
+            )}
+            {cfg.showBadge && (
+              <LayerSlider label="크기" cfgKey="badgeScale" min={0.5} max={2} step={0.05}
+                fmt={v => Math.round(v*100)+"%"} cfg={cfg} setCfg={setCfg}/>
+            )}
           </>)}
 
 
