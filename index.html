@@ -54,6 +54,32 @@ const ACCENTS = [
   { id: "red",    hex: "#ff3b3b", label: "레드"   },
 ];
 
+// ─── 프리셋 ─────────────────────────────────────────────────────
+const PRESETS = [
+  {
+    id: "custom1",
+    label: "커스텀 1",
+    values: {
+      layout: "split",
+      imgScale: 1.62, imgOffsetX: -0.29, imgOffsetY: 0,
+      headSizeScale: 1.50,
+      bodySizeScale: 1.05, bodyLineHeight: 1.0, textGap: 0,
+      textAlign: "center", textVAlign: 0, textPadX: 0.06,
+    },
+  },
+  {
+    id: "custom2",
+    label: "커스텀 2",
+    values: {
+      layout: "overlay",
+      imgScale: 1.62, imgOffsetX: -0.29, imgOffsetY: 0,
+      headSizeScale: 1.25,
+      bodySizeScale: 0.70, bodyLineHeight: 0.9, textGap: 0,
+      textAlign: "left", textVAlign: 0.9, textPadX: 0.02,
+    },
+  },
+];
+
 // ─── helpers ────────────────────────────────────────────────────
 function wrapText(ctx, text, maxW) {
   const paragraphs = text.split("\n");
@@ -322,7 +348,7 @@ function drawCanvas(canvas, config, size, imgEl) {
     ctx.textAlign="left"; ctx.textBaseline="middle";
     ctx.fillStyle="#ffffff";
     ctx.fillText(config.company||"하이픽셀플러스", fixedPad*0.6, canvasH-stripH/2);
-    ctx.textAlign="right"; ctx.fillStyle="#ffff";
+    ctx.textAlign="right"; ctx.fillStyle="#444";
     ctx.fillText("Blackmagic Design Authorized Reseller", W-fixedPad*0.6, canvasH-stripH/2);
   }
 
@@ -450,7 +476,7 @@ function drawOverlay(ctx, W, H, config, imgEl, accent, pad) {
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillStyle = "#ffffff";
     ctx.fillText(config.company || "하이픽셀플러스", fixedPad * 0.6, H - stripH / 2);
-    ctx.textAlign = "right"; ctx.fillStyle = "#ffff";
+    ctx.textAlign = "right"; ctx.fillStyle = "#666";
     ctx.fillText("Blackmagic Design Authorized Reseller", W - fixedPad * 0.6, H - stripH / 2);
   }
 
@@ -1507,6 +1533,26 @@ ${inputText}
               background:"#f0f0f0", borderRadius:8, border:"1px dashed #ddd", textAlign:"center" }}>
               오른쪽 레이어 패널에서<br/>각 요소를 편집하세요 →
             </div>
+
+            {/* 프리셋 */}
+            <div style={{ fontSize:11, fontWeight:800, color:"#aaa", letterSpacing:"0.1em",
+              marginTop:20, marginBottom:10 }}>프리셋</div>
+            {PRESETS.map(preset => (
+              <button key={preset.id}
+                onClick={() => setCfg({...cfg, ...preset.values})}
+                style={{ width:"100%", padding:"11px 14px", borderRadius:8, fontSize:13,
+                  fontWeight:600, cursor:"pointer", marginBottom:6, textAlign:"left",
+                  background:"#fff", border:"1.5px solid #d8d8d8", color:"#444",
+                  display:"flex", alignItems:"center", gap:8, transition:"all 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.background="#111"; e.currentTarget.style.color="#fff"; e.currentTarget.style.borderColor="#111"; }}
+                onMouseLeave={e => { e.currentTarget.style.background="#fff"; e.currentTarget.style.color="#444"; e.currentTarget.style.borderColor="#d8d8d8"; }}>
+                <span style={{ fontSize:15 }}>⚡</span>
+                <span>{preset.label}</span>
+                <span style={{ fontSize:11, color:"#aaa", marginLeft:"auto" }}>
+                  {preset.values.layout === "overlay" ? "오버레이" : "나누기"}
+                </span>
+              </button>
+            ))}
           </div>
 
         {/* ── CENTER: Preview ── */}
