@@ -265,19 +265,33 @@ function drawCanvas(canvas, config, size, imgEl, logoImgEl) {
   const usableTextH = textH - stripH;
   const maxTextSpace = usableTextH * 0.88;
 
-  if (total > maxTextSpace && total > 0) {
-    const ratio = maxTextSpace / total;
-    hSize  = Math.max(12, Math.floor(hSize * ratio));
-    bSize  = Math.max(10, Math.floor(bSize * ratio));
-    hLH = hSize * 1.15;
-    bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
-    ctx.font=`900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    hLines = wrapText(ctx, config.headline||"", W-pad*2);
-    ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
-    bLines = wrapText(ctx, config.body||"", W-pad*2.2);
-    totalH = hLines.length * hLH;
-    totalB = bLines.length * bLH;
-    total  = totalH + gap + totalB;
+if (total > maxTextSpace && total > 0) {
+    // 1단계: 본문만 먼저 축소
+    const bodyOnly = maxTextSpace - totalH - gap;
+    if (bodyOnly > 0 && totalB > 0) {
+      const bodyRatio = bodyOnly / totalB;
+      bSize = Math.max(10, Math.floor(bSize * bodyRatio));
+      bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
+      ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+      bLines = wrapText(ctx, config.body||"", W-pad*2.2);
+      totalB = bLines.length * bLH;
+      total  = totalH + gap + totalB;
+    }
+    // 2단계: 그래도 넘치면 전체 축소
+    if (total > maxTextSpace) {
+      const ratio = maxTextSpace / total;
+      hSize  = Math.max(12, Math.floor(hSize * ratio));
+      bSize  = Math.max(10, Math.floor(bSize * ratio));
+      hLH = hSize * 1.15;
+      bLH = bSize * 1.55 * (config.bodyLineHeight ?? 1);
+      ctx.font=`900 ${hSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+      hLines = wrapText(ctx, config.headline||"", W-pad*2);
+      ctx.font=`${bSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+      bLines = wrapText(ctx, config.body||"", W-pad*2.2);
+      totalH = hLines.length * hLH;
+      totalB = bLines.length * bLH;
+      total  = totalH + gap + totalB;
+    }
   }
 
   if (imgEl) {
