@@ -926,6 +926,11 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
     imgScale:  1, imgOffsetX: 0, imgOffsetY: 0,
     blurStrokes: [],
     headPos: null, bodyPos: null,
+    layout: "split", photoRatio: 0.60, overlayStart: 0.35,
+    accentColor: "#ffffff", headSizeScale: 1, bodySizeScale: 1,
+    textGap: 1, textVAlign: 0, bodyLineHeight: 1,
+    textPadX: 0.08, textAlign: "center",
+    showBadge: false, badgeScale: 1,
     ...overrides,
   });
 
@@ -940,12 +945,9 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
   const savedCompany = (() => { try { return localStorage.getItem("bmd_company") || ""; } catch(e) { return ""; } })();
 
   const [shared, setShared] = useState({
-    photoRatio: 0.60, showBranding: true, accentColor: "#ffffff",
-    company: savedCompany || resellerName || "하이픽셀플러스", headSizeScale: 1, bodySizeScale: 1,
-    textGap: 1, textVAlign: 0, bodyLineHeight: 1,
-    layout: "split", overlayStart: 0.35, textPadX: 0.08,
-    showBadge: false, textAlign: "center",
-    badgeScale: 1,
+    // 모든 슬라이드 공통 (브랜딩만)
+    showBranding: true,
+    company: savedCompany || resellerName || "하이픽셀플러스",
     logoUrl: (() => { try { return localStorage.getItem("bmd_logo_url") || null; } catch(e) { return null; } })(),
     logoScale: 1, logoOpacity: 1, logoPos: "top-right",
   });
