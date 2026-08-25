@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="./video-editor.css" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
@@ -42,6 +43,7 @@
 </head>
 <body>
 <div id="root"></div>
+<script type="text/babel" src="./video-editor.jsx"></script>
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
@@ -749,6 +751,13 @@ function App() {
     setEmail(""); setPassword(""); setCompany("");
   };
 
+  const localVideoPreview = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+    && new URLSearchParams(window.location.search).get("preview") === "video";
+
+  if (localVideoPreview) {
+    return <MainApp resellerName="검토용 리셀러" resellerLogo="" handleLogout={() => {}} resellerId="local-preview" initialMode="video" />;
+  }
+
   if (mode === "pending") {
     return (
       <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
@@ -898,7 +907,8 @@ function App() {
 }
 
 // ─── Main App ────────────────────────────────────────────────
-function MainApp({ resellerName, resellerLogo, handleLogout, resellerId }) {
+function MainApp({ resellerName, resellerLogo, handleLogout, resellerId, initialMode="image" }) {
+  const [appMode, setAppMode] = useState(initialMode);
   const [pasteHint, setPasteHint] = useState(false);
   const [size,     setSize]     = useState(SIZES[0]);
   const [fmt,      setFmt]      = useState("png");
@@ -1671,7 +1681,7 @@ ${inputText}
         <div style={{ width:7, height:7, background:"#111", borderRadius:"50%" }}/>
         <span style={{ fontWeight:800, fontSize:14, letterSpacing:"0.12em" }}>BLACKMAGIC DESIGN</span>
         <span style={{ color:"#ccc", fontSize:16 }}>|</span>
-        <span style={{ fontSize:14, color:"#888" }}>리셀러 이미지 메이커</span>
+        <span style={{ fontSize:14, color:"#888" }}>리셀러 콘텐츠 메이커</span>
         <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:12 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             {resellerLogo && (
@@ -1688,20 +1698,36 @@ ${inputText}
           <div style={{ width:1, height:20, background:"#e0e0e0" }}/>
           <button onClick={() => setShowSaveModal(true)}
             style={{ fontSize:13, fontWeight:700, color:"#fff", background:"#3b82f6", border:"none",
-              padding:"6px 16px", borderRadius:6, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
+              padding:"6px 16px", borderRadius:6, cursor:"pointer", display:appMode==="image"?"flex":"none", alignItems:"center", gap:5 }}>
             💾 저장
           </button>
           <button onClick={() => setShowHistoryModal(true)}
             style={{ fontSize:13, fontWeight:600, color:"#555", background:"#f0f0f0", border:"1px solid #ddd",
-              padding:"6px 14px", borderRadius:6, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
+              padding:"6px 14px", borderRadius:6, cursor:"pointer", display:appMode==="image"?"flex":"none", alignItems:"center", gap:5 }}>
             🕐 히스토리 {historyList.length > 0 && <span style={{ fontSize:11, background:"#555", color:"#fff", borderRadius:10, padding:"1px 6px" }}>{historyList.length}</span>}
           </button>
         </div>
       </div>
 
+      {/* ── Image / Video mode tabs ── */}
+      <div style={{ height:48, background:"#fff", borderBottom:"1px solid #e0e0e0",
+        display:"flex", alignItems:"flex-end", padding:"0 20px", gap:4, flexShrink:0 }}>
+        {[{id:"image",label:"이미지 만들기"},{id:"video",label:"영상 만들기"}].map(mode => (
+          <button key={mode.id} onClick={() => setAppMode(mode.id)}
+            style={{ height:40, padding:"0 20px", border:"none",
+              borderBottom:appMode===mode.id ? "3px solid #111" : "3px solid transparent",
+              background:"transparent", color:appMode===mode.id ? "#111" : "#999",
+              fontSize:14, fontWeight:appMode===mode.id ? 800 : 600, cursor:"pointer" }}>
+            {mode.label}
+          </button>
+        ))}
+      </div>
+
+      {appMode === "video" && <VideoEditor resellerName={resellerName} />}
+
       {/* ── Slide Tab Bar ── */}
       <div style={{ background:"#fff", borderBottom:"1px solid #e0e0e0",
-        padding:"0 20px", display:"flex", alignItems:"center", gap:8,
+        padding:"0 20px", display:appMode==="image"?"flex":"none", alignItems:"center", gap:8,
         overflowX:"auto", WebkitOverflowScrolling:"touch", flexShrink:0, height:52 }}>
         {slides.map((s, i) => (
           <div key={s.id} style={{ display:"flex", alignItems:"center", gap:2, flexShrink:0 }}>
@@ -1744,7 +1770,7 @@ ${inputText}
         </button>
       </div>
 
-      <div style={{ display:"flex", flex:1, minHeight:0, overflow:"hidden" }}>
+      <div style={{ display:appMode==="image"?"flex":"none", flex:1, minHeight:0, overflow:"hidden" }}>
 
           {/* ── LEFT PANEL ── */}
           <div style={{ width:240, borderRight:"1px solid #e0e0e0",
