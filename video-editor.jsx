@@ -578,9 +578,16 @@ function VideoEditor({ resellerName }) {
   };
 
   const addFiles = (files) => {
-    const accepted = Array.from(files || []).filter((file) =>
-      file.type.startsWith("image/") || file.type.startsWith("video/")
+    const incoming = Array.from(files || []);
+    const accepted = incoming.filter((file) =>
+      (file.type.startsWith("image/") || file.type.startsWith("video/")) &&
+      file.size <= 500 * 1024 * 1024
     ).slice(0, Math.max(0, 12 - clips.length));
+    if (incoming.length && !accepted.length) {
+      alert(
+        "지원되는 사진·영상 파일인지, 파일 크기가 500MB 이하인지 확인해주세요.",
+      );
+    }
     if (!accepted.length) return;
     const added = accepted.map((file) => {
       const url = URL.createObjectURL(file);
@@ -696,6 +703,12 @@ function VideoEditor({ resellerName }) {
 
   const exportVideo = async () => {
     if (!clips.length || exportState) return;
+    if (timeline.total > 60) {
+      alert(
+        "검토용 버전에서는 안정적인 출력을 위해 전체 영상을 60초 이내로 맞춰주세요.",
+      );
+      return;
+    }
     stopPlayback();
     exportCancelRef.current = false;
     const dimensions = quality === "1080"
