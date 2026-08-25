@@ -15,6 +15,9 @@
 .video-editor select {
   font-family: Pretendard, 'Noto Sans KR', sans-serif;
 }
+.video-editor input:not([type="range"]) {
+  font-size: 11px !important;
+}
 
 .video-media-panel,
 .video-settings-panel {
