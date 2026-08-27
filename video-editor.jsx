@@ -73,7 +73,7 @@ function bmdBuildTimeline(clips) {
   return { items, total: items.length ? items[items.length - 1].end : 0 };
 }
 
-function bmdDrawCover(ctx, source, width, height, scale, offsetX) {
+function bmdDrawCover(ctx, source, width, height, scale, offsetX, offsetY) {
   if (!source || !source.videoWidth && !source.naturalWidth) return false;
   const sourceWidth = source.videoWidth || source.naturalWidth || source.width;
   const sourceHeight = source.videoHeight || source.naturalHeight ||
@@ -90,11 +90,15 @@ function bmdDrawCover(ctx, source, width, height, scale, offsetX) {
     drawWidth = width;
     drawHeight = width / sourceRatio;
   }
-  const zoom = Math.max(1, scale || 1);
+  const zoom = Math.min(3, Math.max(1, scale || 1));
   drawWidth *= zoom;
   drawHeight *= zoom;
-  const drawX = (width - drawWidth) / 2 + (offsetX || 0) * width;
-  const drawY = (height - drawHeight) / 2;
+  const maxOffsetX = Math.max(0, (drawWidth - width) / 2);
+  const maxOffsetY = Math.max(0, (drawHeight - height) / 2);
+  const normalizedOffsetX = Math.max(-1, Math.min(1, offsetX || 0));
+  const normalizedOffsetY = Math.max(-1, Math.min(1, offsetY || 0));
+  const drawX = (width - drawWidth) / 2 + normalizedOffsetX * maxOffsetX;
+  const drawY = (height - drawHeight) / 2 + normalizedOffsetY * maxOffsetY;
   ctx.drawImage(source, drawX, drawY, drawWidth, drawHeight);
   return true;
 }
@@ -189,6 +193,7 @@ function VideoEditor({ resellerName }) {
   const [customBgm, setCustomBgm] = React.useState(null);
   const [exportState, setExportState] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(false);
+  const [imageDragging, setImageDragging] = React.useState(false);
 
   const canvasRef = React.useRef(null);
   const mediaInputRef = React.useRef(null);
@@ -205,6 +210,7 @@ function VideoEditor({ resellerName }) {
   const exportCancelRef = React.useRef(false);
   const recorderRef = React.useRef(null);
   const audioGraphRef = React.useRef(null);
+  const imageDragRef = React.useRef(null);
 
   const timeline = React.useMemo(() => bmdBuildTimeline(clips), [clips]);
   const selectedClip = clips.find((clip) => clip.id === selectedId) || null;
@@ -244,7 +250,6 @@ function VideoEditor({ resellerName }) {
   const drawSource = React.useCallback(
     (ctx, item, time, width, height, alpha, translateX) => {
       const clip = item.clip;
-      const local = Math.max(0, Math.min(item.duration, time - item.start));
       let source = null;
       if (clip.type === "image") source = getImage(clip);
       else source = mediaRefs.current.get(clip.id);
@@ -252,10 +257,15 @@ function VideoEditor({ resellerName }) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
       ctx.translate(translateX || 0, 0);
-      const kenBurns = clip.type === "image"
-        ? 1 + Math.min(.05, local / Math.max(1, item.duration) * .05)
-        : 1;
-      const drawn = bmdDrawCover(ctx, source, width, height, kenBurns, 0);
+      const drawn = bmdDrawCover(
+        ctx,
+        source,
+        width,
+        height,
+        clip.type === "image" ? clip.imageScale ?? 1 : 1,
+        clip.type === "image" ? clip.imageOffsetX ?? 0 : 0,
+        clip.type === "image" ? clip.imageOffsetY ?? 0 : 0,
+      );
       if (!drawn) {
         const gradient = ctx.createLinearGradient(0, 0, width, height);
         gradient.addColorStop(0, "#111827");
@@ -577,6 +587,62 @@ function VideoEditor({ resellerName }) {
     setTimeout(() => drawPreview(next), 80);
   };
 
+  const selectClip = (clip) => {
+    setSelectedId(clip.id);
+    const item = timeline.items.find((entry) => entry.clip.id === clip.id);
+    if (
+      !item || currentTimeRef.current >= item.start &&
+        currentTimeRef.current <= item.end
+    ) return;
+    seekTo(Math.min(item.end, item.start + .02));
+  };
+
+  const startImageDrag = (event) => {
+    if (selectedClip?.type !== "image") return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    imageDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: selectedClip.imageOffsetX ?? 0,
+      offsetY: selectedClip.imageOffsetY ?? 0,
+    };
+    setImageDragging(true);
+  };
+
+  const moveImageDrag = (event) => {
+    const drag = imageDragRef.current;
+    if (!drag || selectedClip?.type !== "image") return;
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const nextX = Math.max(
+      -1,
+      Math.min(
+        1,
+        drag.offsetX + (event.clientX - drag.startX) / (bounds.width / 2),
+      ),
+    );
+    const nextY = Math.max(
+      -1,
+      Math.min(
+        1,
+        drag.offsetY + (event.clientY - drag.startY) / (bounds.height / 2),
+      ),
+    );
+    updateClip(selectedClip.id, {
+      imageOffsetX: nextX,
+      imageOffsetY: nextY,
+    });
+  };
+
+  const endImageDrag = (event) => {
+    if (!imageDragRef.current) return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    imageDragRef.current = null;
+    setImageDragging(false);
+  };
+
   const addFiles = (files) => {
     const incoming = Array.from(files || []);
     const accepted = incoming.filter((file) =>
@@ -607,6 +673,9 @@ function VideoEditor({ resellerName }) {
         transitionDuration: .5,
         originalAudio: true,
         volume: .75,
+        imageScale: 1,
+        imageOffsetX: 0,
+        imageOffsetY: 0,
       };
     });
     setClips((list) => [...list, ...added]);
@@ -886,7 +955,7 @@ function VideoEditor({ resellerName }) {
                   className={`video-clip-row ${
                     selectedId === clip.id ? "is-selected" : ""
                   }`}
-                  onClick={() => setSelectedId(clip.id)}
+                  onClick={() => selectClip(clip)}
                 >
                   <div className="video-clip-top">
                     <div className="video-clip-thumb">
@@ -973,7 +1042,15 @@ function VideoEditor({ resellerName }) {
             </span>
           </div>
           <div className="video-preview-stage-wrap">
-            <div className="video-canvas-shell">
+            <div
+              className={`video-canvas-shell ${
+                selectedClip?.type === "image" ? "can-adjust-image" : ""
+              } ${imageDragging ? "is-dragging" : ""}`}
+              onPointerDown={startImageDrag}
+              onPointerMove={moveImageDrag}
+              onPointerUp={endImageDrag}
+              onPointerCancel={endImageDrag}
+            >
               <canvas
                 ref={canvasRef}
                 className="video-preview-canvas"
@@ -986,6 +1063,11 @@ function VideoEditor({ resellerName }) {
                     {dragOver ? "여기에 놓으세요" : "릴스 미리보기"}
                   </strong>
                   <span>사진과 영상을 추가해주세요</span>
+                </div>
+              )}
+              {clips.length > 0 && selectedClip?.type === "image" && (
+                <div className="video-image-drag-badge">
+                  드래그해서 사진 위치 조정
                 </div>
               )}
             </div>
@@ -1048,24 +1130,100 @@ function VideoEditor({ resellerName }) {
               </div>
               {selectedClip.type === "image"
                 ? (
-                  <div className="video-control-row">
-                    <span className="video-control-label">표시 시간</span>
-                    <input
-                      className="video-number-input"
-                      type="number"
-                      min="1"
-                      max="10"
-                      step=".5"
-                      value={selectedClip.duration}
-                      onChange={(event) =>
+                  <>
+                    <div className="video-control-row">
+                      <span className="video-control-label">표시 시간</span>
+                      <input
+                        className="video-number-input"
+                        type="number"
+                        min="1"
+                        max="10"
+                        step=".5"
+                        value={selectedClip.duration}
+                        onChange={(event) =>
+                          updateClip(selectedClip.id, {
+                            duration: Math.max(
+                              1,
+                              Math.min(10, Number(event.target.value)),
+                            ),
+                          })}
+                      />
+                    </div>
+                    <label className="video-image-slider">
+                      <span>
+                        <b>확대/축소</b>
+                        <em>{(selectedClip.imageScale ?? 1).toFixed(2)}×</em>
+                      </span>
+                      <input
+                        className="video-range"
+                        type="range"
+                        min="1"
+                        max="3"
+                        step=".01"
+                        value={selectedClip.imageScale ?? 1}
+                        onChange={(event) =>
+                          updateClip(selectedClip.id, {
+                            imageScale: Number(event.target.value),
+                          })}
+                      />
+                    </label>
+                    <label className="video-image-slider">
+                      <span>
+                        <b>좌우 위치</b>
+                        <em>
+                          {Math.round((selectedClip.imageOffsetX ?? 0) * 100)}
+                        </em>
+                      </span>
+                      <input
+                        className="video-range"
+                        type="range"
+                        min="-1"
+                        max="1"
+                        step=".01"
+                        value={selectedClip.imageOffsetX ?? 0}
+                        onChange={(event) =>
+                          updateClip(selectedClip.id, {
+                            imageOffsetX: Number(event.target.value),
+                          })}
+                      />
+                    </label>
+                    <label className="video-image-slider">
+                      <span>
+                        <b>상하 위치</b>
+                        <em>
+                          {Math.round((selectedClip.imageOffsetY ?? 0) * 100)}
+                        </em>
+                      </span>
+                      <input
+                        className="video-range"
+                        type="range"
+                        min="-1"
+                        max="1"
+                        step=".01"
+                        value={selectedClip.imageOffsetY ?? 0}
+                        onChange={(event) =>
+                          updateClip(selectedClip.id, {
+                            imageOffsetY: Number(event.target.value),
+                          })}
+                      />
+                    </label>
+                    <div className="video-image-help">
+                      미리보기의 사진을 마우스로 끌어서도 위치를 바꿀 수
+                      있습니다.
+                    </div>
+                    <button
+                      className="video-image-reset"
+                      type="button"
+                      onClick={() =>
                         updateClip(selectedClip.id, {
-                          duration: Math.max(
-                            1,
-                            Math.min(10, Number(event.target.value)),
-                          ),
+                          imageScale: 1,
+                          imageOffsetX: 0,
+                          imageOffsetY: 0,
                         })}
-                    />
-                  </div>
+                    >
+                      사진 위치·크기 초기화
+                    </button>
+                  </>
                 )
                 : (
                   <>
