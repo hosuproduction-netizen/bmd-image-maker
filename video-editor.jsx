@@ -90,11 +90,11 @@ function bmdDrawCover(ctx, source, width, height, scale, offsetX, offsetY) {
     drawWidth = width;
     drawHeight = width / sourceRatio;
   }
-  const zoom = Math.min(3, Math.max(1, scale || 1));
+  const zoom = Math.min(3, Math.max(.2, scale || 1));
   drawWidth *= zoom;
   drawHeight *= zoom;
-  const maxOffsetX = Math.max(0, (drawWidth - width) / 2);
-  const maxOffsetY = Math.max(0, (drawHeight - height) / 2);
+  const maxOffsetX = Math.abs(drawWidth - width) / 2;
+  const maxOffsetY = Math.abs(drawHeight - height) / 2;
   const normalizedOffsetX = Math.max(-1, Math.min(1, offsetX || 0));
   const normalizedOffsetY = Math.max(-1, Math.min(1, offsetY || 0));
   const drawX = (width - drawWidth) / 2 + normalizedOffsetX * maxOffsetX;
@@ -1157,7 +1157,7 @@ function VideoEditor({ resellerName }) {
                       <input
                         className="video-range"
                         type="range"
-                        min="1"
+                        min=".2"
                         max="3"
                         step=".01"
                         value={selectedClip.imageScale ?? 1}
@@ -1208,8 +1208,8 @@ function VideoEditor({ resellerName }) {
                       />
                     </label>
                     <div className="video-image-help">
-                      미리보기의 사진을 마우스로 끌어서도 위치를 바꿀 수
-                      있습니다.
+                      20%까지 줄일 수 있으며, 미리보기의 사진을 마우스로 끌어서
+                      위치를 바꿀 수도 있습니다.
                     </div>
                     <button
                       className="video-image-reset"
