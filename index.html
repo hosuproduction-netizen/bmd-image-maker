@@ -1728,7 +1728,17 @@ ${inputText}
         display:appMode==="video"?"flex":"none", flexDirection:"column",
         flex:1, minHeight:0, overflow:"hidden"
       }}>
-        <VideoEditor resellerName={resellerName} isActive={appMode==="video"} />
+        <VideoEditor
+          resellerName={resellerName}
+          isActive={appMode==="video"}
+          imageTextSource={{
+            headline:slide.headline, body:slide.body,
+            accentColor:slide.accentColor, textAlign:slide.textAlign,
+            sourceLabel:`이미지 슬라이드 ${activeSlide+1}`
+          }}
+          branding={shared}
+          onBrandingChange={patch => setShared(prev => ({...prev, ...patch}))}
+        />
       </div>
 
       {/* ── Slide Tab Bar ── */}
