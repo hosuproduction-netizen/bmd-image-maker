@@ -45,7 +45,60 @@
   letter-spacing: .08em;
 }
 
+.video-layout-section {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e4e7;
+}
+.video-layout-heading {
+  margin-bottom: 8px;
+  color: #aaa;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+.video-layout-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.video-layout-picker button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 2px solid #d8d8d8;
+  border-radius: 8px;
+  background: #fff;
+  color: #777;
+  padding: 10px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.video-layout-picker button span {
+  color: #aaa;
+  font-size: 14px;
+}
+.video-layout-picker button.active {
+  border-color: #111;
+  background: #111;
+  color: #fff;
+  font-weight: 800;
+}
+.video-layout-picker button.active span {
+  color: #fff;
+}
+
+.video-media-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
 .video-add-button,
+.video-paste-button,
 .video-music-upload {
   width: 100%;
   border: 2px dashed #c9cdd3;
@@ -56,6 +109,17 @@
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+}
+.video-add-button,
+.video-paste-button {
+  min-height: 48px;
+  padding: 9px 7px;
+  font-size: 10px;
+}
+.video-paste-button {
+  border-style: solid;
+  border-color: #222;
+  color: #222;
 }
 
 .video-add-note {
@@ -336,6 +400,49 @@
   font-size: 11px;
   font-weight: 800;
   letter-spacing: .05em;
+}
+
+.video-text-field {
+  display: block;
+  margin-bottom: 10px;
+}
+.video-text-field > span {
+  display: block;
+  margin-bottom: 5px;
+  color: #555;
+  font-size: 10px;
+  font-weight: 700;
+}
+.video-text-field textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #d3d7dd;
+  border-radius: 7px;
+  background: #fff;
+  color: #222;
+  padding: 8px 9px;
+  font-size: 12px !important;
+  line-height: 1.45;
+}
+.video-text-field textarea:focus {
+  border-color: #777;
+  box-shadow: 0 0 0 2px rgba(0,0,0,.06);
+}
+.video-color-options {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.video-color-options button {
+  width: 23px;
+  height: 23px;
+  border: 2px solid #d2d5da;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.video-color-options button.active {
+  border-color: #111;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px #111;
 }
 
 .video-segmented {
