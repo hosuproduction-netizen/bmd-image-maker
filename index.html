@@ -1162,6 +1162,7 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId, initial
 
   useEffect(() => {
     const onPaste = (e) => {
+      if (appMode !== "image") return;
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
@@ -1192,7 +1193,7 @@ function MainApp({ resellerName, resellerLogo, handleLogout, resellerId, initial
 
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, []);
+  }, [appMode]);
 
   const tryLoadImageUrl = (url) => {
     const img = new Image();
@@ -1723,7 +1724,12 @@ ${inputText}
         ))}
       </div>
 
-      {appMode === "video" && <VideoEditor resellerName={resellerName} />}
+      <div style={{
+        display:appMode==="video"?"flex":"none", flexDirection:"column",
+        flex:1, minHeight:0, overflow:"hidden"
+      }}>
+        <VideoEditor resellerName={resellerName} isActive={appMode==="video"} />
+      </div>
 
       {/* ── Slide Tab Bar ── */}
       <div style={{ background:"#fff", borderBottom:"1px solid #e0e0e0",
