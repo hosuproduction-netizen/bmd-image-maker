@@ -132,7 +132,7 @@ function bmdWrapCanvasText(ctx, text, maxWidth, maxLines) {
   return lines;
 }
 
-function bmdDrawSceneText(ctx, clip, width, height, layout) {
+function bmdDrawSceneText(ctx, clip, width, height, layout, branding) {
   if (layout === "media") return;
   const accent = clip.accentColor || "#ffffff";
   const align = clip.textAlign || "center";
@@ -156,7 +156,10 @@ function bmdDrawSceneText(ctx, clip, width, height, layout) {
   const totalHeight = headlineLines.length * headlineLineHeight + gap +
     bodyLines.length * bodyLineHeight;
   const areaTop = layout === "split" ? height * .6 : height * .48;
-  const areaBottom = layout === "split" ? height * .97 : height * .92;
+  const hasBranding = Boolean(branding?.showBranding);
+  const areaBottom = layout === "split"
+    ? height * (hasBranding ? .93 : .97)
+    : height * (hasBranding ? .88 : .92);
   let y = areaTop + Math.max(0, (areaBottom - areaTop - totalHeight) / 2);
   const x = align === "left"
     ? padding
@@ -185,7 +188,73 @@ function bmdDrawSceneText(ctx, clip, width, height, layout) {
   });
 }
 
-function bmdDrawScene(ctx, source, clip, width, height) {
+function bmdDrawBrandingBar(ctx, clip, width, height, branding) {
+  if (!branding?.showBranding) return;
+  const stripHeight = Math.round(height * .042);
+  const padding = width * .048;
+  ctx.fillStyle = "rgba(8,8,8,.9)";
+  ctx.fillRect(0, height - stripHeight, width, stripHeight);
+  ctx.fillStyle = `${clip.accentColor || "#ffffff"}55`;
+  ctx.fillRect(0, height - stripHeight, width, Math.max(1, height * .0015));
+  ctx.font = `700 ${
+    Math.max(6, Math.round(width * .018))
+  }px Pretendard, 'Noto Sans KR', sans-serif`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(
+    branding.company || "하이픽셀플러스",
+    padding,
+    height - stripHeight / 2,
+  );
+  ctx.textAlign = "right";
+  ctx.fillText(
+    "Blackmagic Design Authorized Reseller",
+    width - padding,
+    height - stripHeight / 2,
+  );
+}
+
+function bmdDrawProjectLogo(ctx, width, height, branding, logoImage) {
+  if (!branding?.logoUrl || !logoImage) return;
+  const scale = branding.logoScale ?? 1;
+  const opacity = branding.logoOpacity ?? 1;
+  const position = branding.logoPos || "top-right";
+  const padding = Math.round(width * .04);
+  const maxWidth = Math.round(width * .18 * scale);
+  const maxHeight = Math.round(width * .09 * scale);
+  const imageWidth = logoImage.naturalWidth || logoImage.width;
+  const imageHeight = logoImage.naturalHeight || logoImage.height;
+  if (!imageWidth || !imageHeight) return;
+  const ratio = imageWidth / imageHeight;
+  let drawWidth;
+  let drawHeight;
+  if (ratio > maxWidth / maxHeight) {
+    drawWidth = maxWidth;
+    drawHeight = Math.round(maxWidth / ratio);
+  } else {
+    drawHeight = maxHeight;
+    drawWidth = Math.round(maxHeight * ratio);
+  }
+  const x = position.includes("right") ? width - padding - drawWidth : padding;
+  const y = position.includes("bottom")
+    ? height - padding - drawHeight
+    : padding;
+  ctx.save();
+  ctx.globalAlpha *= opacity;
+  ctx.drawImage(logoImage, x, y, drawWidth, drawHeight);
+  ctx.restore();
+}
+
+function bmdDrawScene(
+  ctx,
+  source,
+  clip,
+  width,
+  height,
+  branding,
+  logoImage,
+) {
   const layout = clip.layout || "media";
   const mediaHeight = layout === "split" ? Math.round(height * .6) : height;
   ctx.fillStyle = "#05070b";
@@ -231,7 +300,9 @@ function bmdDrawScene(ctx, source, clip, width, height) {
     ctx.fillStyle = fade;
     ctx.fillRect(0, height * .32, width, height * .68);
   }
-  bmdDrawSceneText(ctx, clip, width, height, layout);
+  bmdDrawSceneText(ctx, clip, width, height, layout, branding);
+  bmdDrawBrandingBar(ctx, clip, width, height, branding);
+  bmdDrawProjectLogo(ctx, width, height, branding, logoImage);
   return drawn;
 }
 
@@ -314,7 +385,13 @@ function bmdWavBlob(style) {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-function VideoEditor({ resellerName, isActive = true }) {
+function VideoEditor({
+  resellerName,
+  isActive = true,
+  imageTextSource = null,
+  branding = null,
+  onBrandingChange = () => {},
+}) {
   const [clips, setClips] = React.useState([]);
   const [selectedId, setSelectedId] = React.useState(null);
   const [currentTime, setCurrentTime] = React.useState(0);
@@ -326,6 +403,15 @@ function VideoEditor({ resellerName, isActive = true }) {
   const [exportState, setExportState] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(false);
   const [imageDragging, setImageDragging] = React.useState(false);
+  const [textMode, setTextMode] = React.useState("scene");
+  const [commonText, setCommonText] = React.useState({
+    headline: "",
+    body: "",
+    accentColor: "#ffffff",
+    textAlign: "center",
+    sourceLabel: "",
+  });
+  const [logoImage, setLogoImage] = React.useState(null);
 
   const canvasRef = React.useRef(null);
   const mediaInputRef = React.useRef(null);
@@ -343,6 +429,7 @@ function VideoEditor({ resellerName, isActive = true }) {
   const recorderRef = React.useRef(null);
   const audioGraphRef = React.useRef(null);
   const imageDragRef = React.useRef(null);
+  const brandingLogoInputRef = React.useRef(null);
 
   const timeline = React.useMemo(() => bmdBuildTimeline(clips), [clips]);
   const selectedClip = clips.find((clip) => clip.id === selectedId) || null;
@@ -382,6 +469,15 @@ function VideoEditor({ resellerName, isActive = true }) {
   const drawSource = React.useCallback(
     (ctx, item, time, width, height, alpha, translateX) => {
       const clip = item.clip;
+      const renderedClip = textMode === "common"
+        ? {
+          ...clip,
+          headline: commonText.headline,
+          body: commonText.body,
+          accentColor: commonText.accentColor,
+          textAlign: commonText.textAlign,
+        }
+        : clip;
       let source = null;
       if (clip.type === "image") source = getImage(clip);
       else source = mediaRefs.current.get(clip.id);
@@ -389,10 +485,18 @@ function VideoEditor({ resellerName, isActive = true }) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
       ctx.translate(translateX || 0, 0);
-      bmdDrawScene(ctx, source, clip, width, height);
+      bmdDrawScene(
+        ctx,
+        source,
+        renderedClip,
+        width,
+        height,
+        branding,
+        logoImage,
+      );
       ctx.restore();
     },
-    [getImage],
+    [getImage, textMode, commonText, branding, logoImage],
   );
 
   const renderFrame = React.useCallback((time, canvas) => {
@@ -470,6 +574,30 @@ function VideoEditor({ resellerName, isActive = true }) {
   React.useEffect(() => {
     drawPreview(Math.min(currentTime, timeline.total));
   }, [clips, currentTime, timeline.total, drawPreview]);
+
+  React.useEffect(() => {
+    if (!branding?.logoUrl) {
+      setLogoImage(null);
+      return;
+    }
+    let cancelled = false;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      if (!cancelled) setLogoImage(image);
+    };
+    image.onerror = () => {
+      const fallback = new Image();
+      fallback.onload = () => {
+        if (!cancelled) setLogoImage(fallback);
+      };
+      fallback.src = branding.logoUrl;
+    };
+    image.src = branding.logoUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [branding?.logoUrl]);
 
   const getBgmUrl = React.useCallback((id) => {
     if (id === "none") return null;
@@ -1061,6 +1189,43 @@ function VideoEditor({ resellerName, isActive = true }) {
   };
 
   const bgmUrl = getBgmUrl(bgmId);
+  const activeText = textMode === "common" ? commonText : selectedClip;
+
+  const importImageTabText = () => {
+    if (!imageTextSource) return;
+    setCommonText({
+      headline: imageTextSource.headline || "",
+      body: imageTextSource.body || "",
+      accentColor: imageTextSource.accentColor || "#ffffff",
+      textAlign: imageTextSource.textAlign || "center",
+      sourceLabel: imageTextSource.sourceLabel || "이미지 만들기",
+    });
+    setTextMode("common");
+  };
+
+  const chooseTextMode = (mode) => {
+    if (mode === "common" && !commonText.sourceLabel && imageTextSource) {
+      importImageTabText();
+      return;
+    }
+    setTextMode(mode);
+  };
+
+  const updateActiveText = (patch) => {
+    if (textMode === "common") {
+      setCommonText((current) => ({ ...current, ...patch }));
+    } else if (selectedClip) {
+      updateClip(selectedClip.id, patch);
+    }
+  };
+
+  const chooseBrandingLogo = (file) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (event) =>
+      onBrandingChange({ logoUrl: event.target.result });
+    reader.readAsDataURL(file);
+  };
 
   return (
     <>
@@ -1332,14 +1497,47 @@ function VideoEditor({ resellerName, isActive = true }) {
           {selectedClip && (selectedClip.layout || "media") !== "media" && (
             <section className="video-settings-section">
               <div className="video-settings-title">글 레이어</div>
+              <div className="video-segmented video-text-mode">
+                <button
+                  className={textMode === "common" ? "active" : ""}
+                  type="button"
+                  onClick={() => chooseTextMode("common")}
+                >
+                  전체 장면 같은 글
+                </button>
+                <button
+                  className={textMode === "scene" ? "active" : ""}
+                  type="button"
+                  onClick={() => chooseTextMode("scene")}
+                >
+                  장면별 다른 글
+                </button>
+              </div>
+              {textMode === "common" && (
+                <div className="video-import-text-wrap">
+                  <button
+                    className="video-import-text-button"
+                    type="button"
+                    onClick={importImageTabText}
+                    disabled={!imageTextSource}
+                  >
+                    이미지 탭의 현재 글 가져오기
+                  </button>
+                  <div className="video-import-text-note">
+                    {commonText.sourceLabel
+                      ? `${commonText.sourceLabel}에서 가져온 뒤 영상용으로 독립 저장됩니다.`
+                      : "현재 선택된 이미지 슬라이드의 제목과 본문을 복사합니다."}
+                  </div>
+                </div>
+              )}
               <label className="video-text-field">
                 <span>제목</span>
                 <textarea
                   rows="2"
-                  value={selectedClip.headline || ""}
+                  value={activeText?.headline || ""}
                   placeholder="제목을 입력하세요"
                   onChange={(event) =>
-                    updateClip(selectedClip.id, {
+                    updateActiveText({
                       headline: event.target.value,
                     })}
                 />
@@ -1348,10 +1546,10 @@ function VideoEditor({ resellerName, isActive = true }) {
                 <span>본문</span>
                 <textarea
                   rows="3"
-                  value={selectedClip.body || ""}
+                  value={activeText?.body || ""}
                   placeholder="본문을 입력하세요"
                   onChange={(event) =>
-                    updateClip(selectedClip.id, { body: event.target.value })}
+                    updateActiveText({ body: event.target.value })}
                 />
               </label>
               <div className="video-control-row">
@@ -1361,14 +1559,14 @@ function VideoEditor({ resellerName, isActive = true }) {
                     (color) => (
                       <button
                         key={color}
-                        className={selectedClip.accentColor === color
+                        className={(activeText?.accentColor || "#ffffff") ===
+                            color
                           ? "active"
                           : ""}
                         type="button"
                         aria-label={`제목 색상 ${color}`}
                         style={{ background: color }}
-                        onClick={() =>
-                          updateClip(selectedClip.id, { accentColor: color })}
+                        onClick={() => updateActiveText({ accentColor: color })}
                       />
                     ),
                   )}
@@ -1382,15 +1580,13 @@ function VideoEditor({ resellerName, isActive = true }) {
                 ].map((alignment) => (
                   <button
                     key={alignment.id}
-                    className={(selectedClip.textAlign || "center") ===
+                    className={(activeText?.textAlign || "center") ===
                         alignment.id
                       ? "active"
                       : ""}
                     type="button"
                     onClick={() =>
-                      updateClip(selectedClip.id, {
-                        textAlign: alignment.id,
-                      })}
+                      updateActiveText({ textAlign: alignment.id })}
                   >
                     {alignment.label}
                   </button>
@@ -1698,6 +1894,128 @@ function VideoEditor({ resellerName, isActive = true }) {
                 )}
               </section>
             )}
+
+          <section className="video-settings-section">
+            <div className="video-settings-title">이미지 탭 브랜딩·로고</div>
+            <div className="video-shared-setting-note">
+              두 탭이 같은 설정을 사용하며 변경 내용이 서로 즉시 반영됩니다.
+            </div>
+            <div className="video-control-row">
+              <span className="video-control-label">하단 브랜딩 바</span>
+              <button
+                className={`video-toggle ${
+                  branding?.showBranding ? "active" : ""
+                }`}
+                type="button"
+                aria-label="하단 브랜딩 바 켜기 또는 끄기"
+                onClick={() => onBrandingChange({
+                  showBranding: !branding?.showBranding,
+                })}
+              />
+            </div>
+            <label className="video-text-field">
+              <span>회사명</span>
+              <input
+                type="text"
+                value={branding?.company || ""}
+                placeholder={resellerName || "회사명을 입력하세요"}
+                onChange={(event) =>
+                  onBrandingChange({ company: event.target.value })}
+              />
+            </label>
+            <input
+              ref={brandingLogoInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => {
+                chooseBrandingLogo(event.target.files[0]);
+                event.target.value = "";
+              }}
+            />
+            <div className="video-brand-logo-row">
+              <button
+                className="video-logo-upload"
+                type="button"
+                onClick={() => brandingLogoInputRef.current?.click()}
+              >
+                {branding?.logoUrl ? "회사 로고 교체" : "회사 로고 가져오기"}
+              </button>
+              {branding?.logoUrl && (
+                <button
+                  className="video-logo-remove"
+                  type="button"
+                  aria-label="회사 로고 삭제"
+                  onClick={() => onBrandingChange({ logoUrl: null })}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            {branding?.logoUrl && (
+              <>
+                <div className="video-logo-preview">
+                  <img src={branding.logoUrl} alt="회사 로고" />
+                </div>
+                <div className="video-logo-position-grid">
+                  {[
+                    { id: "top-left", label: "좌상단" },
+                    { id: "top-right", label: "우상단" },
+                    { id: "bottom-left", label: "좌하단" },
+                    { id: "bottom-right", label: "우하단" },
+                  ].map((position) => (
+                    <button
+                      key={position.id}
+                      className={(branding.logoPos || "top-right") ===
+                          position.id
+                        ? "active"
+                        : ""}
+                      type="button"
+                      onClick={() => onBrandingChange({ logoPos: position.id })}
+                    >
+                      {position.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="video-image-slider">
+                  <span>
+                    <b>로고 크기</b>
+                    <em>{Math.round((branding.logoScale ?? 1) * 100)}%</em>
+                  </span>
+                  <input
+                    className="video-range"
+                    type="range"
+                    min=".3"
+                    max="3"
+                    step=".05"
+                    value={branding.logoScale ?? 1}
+                    onChange={(event) =>
+                      onBrandingChange({
+                        logoScale: Number(event.target.value),
+                      })}
+                  />
+                </label>
+                <label className="video-image-slider">
+                  <span>
+                    <b>로고 투명도</b>
+                    <em>{Math.round((branding.logoOpacity ?? 1) * 100)}%</em>
+                  </span>
+                  <input
+                    className="video-range"
+                    type="range"
+                    min=".1"
+                    max="1"
+                    step=".05"
+                    value={branding.logoOpacity ?? 1}
+                    onChange={(event) =>
+                      onBrandingChange({
+                        logoOpacity: Number(event.target.value),
+                      })}
+                  />
+                </label>
+              </>
+            )}
+          </section>
 
           <section className="video-settings-section">
             <div className="video-settings-title">배경음악</div>
