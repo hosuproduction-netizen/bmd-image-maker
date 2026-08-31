@@ -20,6 +20,12 @@ const BMD_VIDEO_TRACKS = [
   },
 ];
 
+const BMD_VIDEO_LAYOUTS = [
+  { id: "split", label: "사진 + 글 나누기", icon: "▣" },
+  { id: "overlay", label: "사진 위에 글쓰기", icon: "▤" },
+  { id: "media", label: "글 없이 사진만", icon: "▧" },
+];
+
 function bmdVideoId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
@@ -103,6 +109,132 @@ function bmdDrawCover(ctx, source, width, height, scale, offsetX, offsetY) {
   return true;
 }
 
+function bmdWrapCanvasText(ctx, text, maxWidth, maxLines) {
+  const lines = [];
+  String(text || "").split("\n").forEach((paragraph) => {
+    if (!paragraph) {
+      if (lines.length < maxLines) lines.push("");
+      return;
+    }
+    let line = "";
+    Array.from(paragraph).forEach((character) => {
+      const next = line + character;
+      if (line && ctx.measureText(next).width > maxWidth) {
+        lines.push(line.trimEnd());
+        line = character.trimStart();
+      } else {
+        line = next;
+      }
+    });
+    if (line && lines.length < maxLines) lines.push(line.trimEnd());
+  });
+  if (lines.length > maxLines) lines.length = maxLines;
+  return lines;
+}
+
+function bmdDrawSceneText(ctx, clip, width, height, layout) {
+  if (layout === "media") return;
+  const accent = clip.accentColor || "#ffffff";
+  const align = clip.textAlign || "center";
+  const padding = width * .08;
+  const textWidth = width - padding * 2;
+  const headlineSize = Math.round(width * .075);
+  const bodySize = Math.round(width * .034);
+  const headlineLineHeight = headlineSize * 1.18;
+  const bodyLineHeight = bodySize * 1.55;
+
+  ctx.font = `900 ${headlineSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+  const headlineLines = bmdWrapCanvasText(
+    ctx,
+    clip.headline,
+    textWidth,
+    layout === "split" ? 3 : 4,
+  );
+  ctx.font = `500 ${bodySize}px Pretendard, 'Noto Sans KR', sans-serif`;
+  const bodyLines = bmdWrapCanvasText(ctx, clip.body, textWidth, 5);
+  const gap = headlineLines.length && bodyLines.length ? height * .022 : 0;
+  const totalHeight = headlineLines.length * headlineLineHeight + gap +
+    bodyLines.length * bodyLineHeight;
+  const areaTop = layout === "split" ? height * .6 : height * .48;
+  const areaBottom = layout === "split" ? height * .97 : height * .92;
+  let y = areaTop + Math.max(0, (areaBottom - areaTop - totalHeight) / 2);
+  const x = align === "left"
+    ? padding
+    : align === "right"
+    ? width - padding
+    : width / 2;
+
+  ctx.textAlign = align;
+  ctx.textBaseline = "top";
+  headlineLines.forEach((line) => {
+    ctx.font = `900 ${headlineSize}px Pretendard, 'Noto Sans KR', sans-serif`;
+    if (layout === "overlay") {
+      ctx.fillStyle = "rgba(0,0,0,.38)";
+      ctx.fillText(line, x + 2, y + 2);
+    }
+    ctx.fillStyle = accent;
+    ctx.fillText(line, x, y);
+    y += headlineLineHeight;
+  });
+  y += gap;
+  bodyLines.forEach((line) => {
+    ctx.font = `500 ${bodySize}px Pretendard, 'Noto Sans KR', sans-serif`;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(line, x, y);
+    y += bodyLineHeight;
+  });
+}
+
+function bmdDrawScene(ctx, source, clip, width, height) {
+  const layout = clip.layout || "media";
+  const mediaHeight = layout === "split" ? Math.round(height * .6) : height;
+  ctx.fillStyle = "#05070b";
+  ctx.fillRect(0, 0, width, height);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, width, mediaHeight);
+  ctx.clip();
+  const drawn = bmdDrawCover(
+    ctx,
+    source,
+    width,
+    mediaHeight,
+    clip.imageScale ?? 1,
+    clip.imageOffsetX ?? 0,
+    clip.imageOffsetY ?? 0,
+  );
+  ctx.restore();
+
+  if (!drawn) {
+    const gradient = ctx.createLinearGradient(0, 0, width, mediaHeight);
+    gradient.addColorStop(0, "#111827");
+    gradient.addColorStop(1, clip.type === "video" ? "#166534" : "#9a3412");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, mediaHeight);
+    ctx.fillStyle = "rgba(255,255,255,.75)";
+    ctx.font = `600 ${Math.round(width * .025)}px Pretendard, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(clip.name, width / 2, mediaHeight / 2);
+  }
+
+  if (layout === "split") {
+    ctx.fillStyle = "#050505";
+    ctx.fillRect(0, mediaHeight, width, height - mediaHeight);
+    ctx.fillStyle = `${clip.accentColor || "#ffffff"}88`;
+    ctx.fillRect(0, mediaHeight, width, Math.max(2, height * .003));
+  } else if (layout === "overlay") {
+    const fade = ctx.createLinearGradient(0, height * .32, 0, height);
+    fade.addColorStop(0, "rgba(0,0,0,0)");
+    fade.addColorStop(.56, "rgba(0,0,0,.58)");
+    fade.addColorStop(1, "rgba(0,0,0,.92)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, height * .32, width, height * .68);
+  }
+  bmdDrawSceneText(ctx, clip, width, height, layout);
+  return drawn;
+}
+
 function bmdWavBlob(style) {
   const sampleRate = 22050;
   const seconds = 16;
@@ -182,7 +314,7 @@ function bmdWavBlob(style) {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-function VideoEditor({ resellerName }) {
+function VideoEditor({ resellerName, isActive = true }) {
   const [clips, setClips] = React.useState([]);
   const [selectedId, setSelectedId] = React.useState(null);
   const [currentTime, setCurrentTime] = React.useState(0);
@@ -257,26 +389,7 @@ function VideoEditor({ resellerName }) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
       ctx.translate(translateX || 0, 0);
-      const drawn = bmdDrawCover(
-        ctx,
-        source,
-        width,
-        height,
-        clip.type === "image" ? clip.imageScale ?? 1 : 1,
-        clip.type === "image" ? clip.imageOffsetX ?? 0 : 0,
-        clip.type === "image" ? clip.imageOffsetY ?? 0 : 0,
-      );
-      if (!drawn) {
-        const gradient = ctx.createLinearGradient(0, 0, width, height);
-        gradient.addColorStop(0, "#111827");
-        gradient.addColorStop(1, clip.type === "video" ? "#166534" : "#9a3412");
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, width, height);
-        ctx.fillStyle = "rgba(255,255,255,.75)";
-        ctx.font = `600 ${Math.round(width * .025)}px Pretendard, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.fillText(clip.name, width / 2, height / 2);
-      }
+      bmdDrawScene(ctx, source, clip, width, height);
       ctx.restore();
     },
     [getImage],
@@ -530,6 +643,10 @@ function VideoEditor({ resellerName }) {
     syncMedia(currentTimeRef.current, "paused");
   }, [syncMedia]);
 
+  React.useEffect(() => {
+    if (!isActive) stopPlayback();
+  }, [isActive, stopPlayback]);
+
   const togglePlayback = async () => {
     if (!clips.length) return;
     if (playingRef.current) {
@@ -598,7 +715,7 @@ function VideoEditor({ resellerName }) {
   };
 
   const startImageDrag = (event) => {
-    if (selectedClip?.type !== "image") return;
+    if (!selectedClip) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     imageDragRef.current = {
@@ -613,7 +730,7 @@ function VideoEditor({ resellerName }) {
 
   const moveImageDrag = (event) => {
     const drag = imageDragRef.current;
-    if (!drag || selectedClip?.type !== "image") return;
+    if (!drag || !selectedClip) return;
     event.preventDefault();
     const bounds = event.currentTarget.getBoundingClientRect();
     const nextX = Math.max(
@@ -676,11 +793,62 @@ function VideoEditor({ resellerName }) {
         imageScale: 1,
         imageOffsetX: 0,
         imageOffsetY: 0,
+        layout: "media",
+        headline: "",
+        body: "",
+        accentColor: "#ffffff",
+        textAlign: "center",
       };
     });
     setClips((list) => [...list, ...added]);
     if (!selectedId) setSelectedId(added[0].id);
   };
+
+  const addClipboardBlobs = (blobs) => {
+    const files = Array.from(blobs || []).map((blob, index) => {
+      const extension = blob.type.split("/")[1]?.replace("jpeg", "jpg") ||
+        "png";
+      return new File(
+        [blob],
+        `붙여넣은-사진-${Date.now()}-${index + 1}.${extension}`,
+        { type: blob.type || "image/png" },
+      );
+    });
+    if (files.length) addFiles(files);
+    return files.length;
+  };
+
+  const pasteImages = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      const blobs = [];
+      for (const item of items) {
+        const imageType = item.types.find((type) => type.startsWith("image/"));
+        if (imageType) blobs.push(await item.getType(imageType));
+      }
+      if (!addClipboardBlobs(blobs)) alert("복사된 사진이 없습니다.");
+    } catch (error) {
+      alert("사진 붙여넣기 권한을 허용해주세요.");
+    }
+  };
+
+  React.useEffect(() => {
+    if (!isActive) return;
+    const onPaste = (event) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const blobs = Array.from(event.clipboardData?.items || [])
+        .filter((item) => item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
+      if (blobs.length) {
+        event.preventDefault();
+        addClipboardBlobs(blobs);
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [isActive, clips.length, selectedId]);
 
   const deleteClip = (id) => {
     stopPlayback();
@@ -917,16 +1085,49 @@ function VideoEditor({ resellerName }) {
       >
         <aside className="video-media-panel">
           <div className="video-panel-heading">
-            <span>미디어</span>
+            <span>장면</span>
             <span>{clips.length} / 12</span>
           </div>
-          <button
-            className="video-add-button"
-            type="button"
-            onClick={() => mediaInputRef.current?.click()}
-          >
-            ＋ 사진·영상 추가
-          </button>
+          {selectedClip && (
+            <section className="video-layout-section">
+              <div className="video-layout-heading">레이아웃</div>
+              <div className="video-layout-picker">
+                {BMD_VIDEO_LAYOUTS.map((layout) => (
+                  <button
+                    key={layout.id}
+                    className={(selectedClip.layout || "media") === layout.id
+                      ? "active"
+                      : ""}
+                    type="button"
+                    onClick={() =>
+                      updateClip(selectedClip.id, { layout: layout.id })}
+                  >
+                    <span>{layout.icon}</span>
+                    {layout.label.replace(
+                      "사진",
+                      selectedClip.type === "video" ? "영상" : "사진",
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          <div className="video-media-actions">
+            <button
+              className="video-add-button"
+              type="button"
+              onClick={() => mediaInputRef.current?.click()}
+            >
+              ＋ 사진·영상 추가
+            </button>
+            <button
+              className="video-paste-button"
+              type="button"
+              onClick={pasteImages}
+            >
+              📋 사진 붙여넣기
+            </button>
+          </div>
           <input
             ref={mediaInputRef}
             type="file"
@@ -939,7 +1140,7 @@ function VideoEditor({ resellerName }) {
             }}
           />
           <div className="video-add-note">
-            파일을 이 화면으로 끌어다 놓아도 됩니다
+            파일을 끌어놓거나 Ctrl/⌘ + V로 사진을 붙여넣을 수 있습니다
           </div>
 
           {!clips.length
@@ -970,9 +1171,12 @@ function VideoEditor({ resellerName }) {
                       <div className="video-clip-name">{clip.name}</div>
                       <div className="video-clip-meta">
                         {bmdVideoTime(bmdClipDuration(clip))} ·{" "}
-                        {clip.type === "video"
-                          ? (clip.originalAudio ? "소리 켜짐" : "소리 꺼짐")
-                          : "세로 채우기"}
+                        {BMD_VIDEO_LAYOUTS.find((layout) =>
+                          layout.id === (clip.layout || "media")
+                        )?.label.replace(
+                          "사진",
+                          clip.type === "video" ? "영상" : "사진",
+                        )}
                       </div>
                     </div>
                     <div className="video-clip-actions">
@@ -1044,7 +1248,7 @@ function VideoEditor({ resellerName }) {
           <div className="video-preview-stage-wrap">
             <div
               className={`video-canvas-shell ${
-                selectedClip?.type === "image" ? "can-adjust-image" : ""
+                selectedClip ? "can-adjust-image" : ""
               } ${imageDragging ? "is-dragging" : ""}`}
               onPointerDown={startImageDrag}
               onPointerMove={moveImageDrag}
@@ -1065,9 +1269,11 @@ function VideoEditor({ resellerName }) {
                   <span>사진과 영상을 추가해주세요</span>
                 </div>
               )}
-              {clips.length > 0 && selectedClip?.type === "image" && (
+              {clips.length > 0 && selectedClip && (
                 <div className="video-image-drag-badge">
-                  드래그해서 사진 위치 조정
+                  드래그해서 {selectedClip.type === "video" ? "영상" : "사진"}
+                  {" "}
+                  위치 조정
                 </div>
               )}
             </div>
@@ -1122,6 +1328,76 @@ function VideoEditor({ resellerName }) {
               </button>
             </div>
           </section>
+
+          {selectedClip && (selectedClip.layout || "media") !== "media" && (
+            <section className="video-settings-section">
+              <div className="video-settings-title">글 레이어</div>
+              <label className="video-text-field">
+                <span>제목</span>
+                <textarea
+                  rows="2"
+                  value={selectedClip.headline || ""}
+                  placeholder="제목을 입력하세요"
+                  onChange={(event) =>
+                    updateClip(selectedClip.id, {
+                      headline: event.target.value,
+                    })}
+                />
+              </label>
+              <label className="video-text-field">
+                <span>본문</span>
+                <textarea
+                  rows="3"
+                  value={selectedClip.body || ""}
+                  placeholder="본문을 입력하세요"
+                  onChange={(event) =>
+                    updateClip(selectedClip.id, { body: event.target.value })}
+                />
+              </label>
+              <div className="video-control-row">
+                <span className="video-control-label">제목 색상</span>
+                <div className="video-color-options">
+                  {["#ffffff", "#f5c518", "#00d4ff", "#ff3b3b"].map(
+                    (color) => (
+                      <button
+                        key={color}
+                        className={selectedClip.accentColor === color
+                          ? "active"
+                          : ""}
+                        type="button"
+                        aria-label={`제목 색상 ${color}`}
+                        style={{ background: color }}
+                        onClick={() =>
+                          updateClip(selectedClip.id, { accentColor: color })}
+                      />
+                    ),
+                  )}
+                </div>
+              </div>
+              <div className="video-segmented three">
+                {[
+                  { id: "left", label: "왼쪽" },
+                  { id: "center", label: "가운데" },
+                  { id: "right", label: "오른쪽" },
+                ].map((alignment) => (
+                  <button
+                    key={alignment.id}
+                    className={(selectedClip.textAlign || "center") ===
+                        alignment.id
+                      ? "active"
+                      : ""}
+                    type="button"
+                    onClick={() =>
+                      updateClip(selectedClip.id, {
+                        textAlign: alignment.id,
+                      })}
+                  >
+                    {alignment.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
           {selectedClip && (
             <section className="video-settings-section">
@@ -1303,6 +1579,76 @@ function VideoEditor({ resellerName }) {
                         {Math.round((selectedClip.volume ?? .75) * 100)}%
                       </span>
                     </div>
+                    <label className="video-image-slider">
+                      <span>
+                        <b>영상 확대/축소</b>
+                        <em>{(selectedClip.imageScale ?? 1).toFixed(2)}×</em>
+                      </span>
+                      <input
+                        className="video-range"
+                        type="range"
+                        min=".2"
+                        max="3"
+                        step=".01"
+                        value={selectedClip.imageScale ?? 1}
+                        onChange={(event) =>
+                          updateClip(selectedClip.id, {
+                            imageScale: Number(event.target.value),
+                          })}
+                      />
+                    </label>
+                    <label className="video-image-slider">
+                      <span>
+                        <b>좌우 위치</b>
+                        <em>
+                          {Math.round((selectedClip.imageOffsetX ?? 0) * 100)}
+                        </em>
+                      </span>
+                      <input
+                        className="video-range"
+                        type="range"
+                        min="-1"
+                        max="1"
+                        step=".01"
+                        value={selectedClip.imageOffsetX ?? 0}
+                        onChange={(event) =>
+                          updateClip(selectedClip.id, {
+                            imageOffsetX: Number(event.target.value),
+                          })}
+                      />
+                    </label>
+                    <label className="video-image-slider">
+                      <span>
+                        <b>상하 위치</b>
+                        <em>
+                          {Math.round((selectedClip.imageOffsetY ?? 0) * 100)}
+                        </em>
+                      </span>
+                      <input
+                        className="video-range"
+                        type="range"
+                        min="-1"
+                        max="1"
+                        step=".01"
+                        value={selectedClip.imageOffsetY ?? 0}
+                        onChange={(event) =>
+                          updateClip(selectedClip.id, {
+                            imageOffsetY: Number(event.target.value),
+                          })}
+                      />
+                    </label>
+                    <button
+                      className="video-image-reset"
+                      type="button"
+                      onClick={() =>
+                        updateClip(selectedClip.id, {
+                          imageScale: 1,
+                          imageOffsetX: 0,
+                          imageOffsetY: 0,
+                        })}
+                    >
+                      영상 위치·크기 초기화
+                    </button>
                   </>
                 )}
             </section>
