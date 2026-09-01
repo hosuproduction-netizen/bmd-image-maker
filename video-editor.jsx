@@ -79,6 +79,17 @@ function bmdBuildTimeline(clips) {
   return { items, total: items.length ? items[items.length - 1].end : 0 };
 }
 
+function bmdReorderClips(clips, id, dropIndex) {
+  const fromIndex = clips.findIndex((item) => item.id === id);
+  if (fromIndex < 0) return clips;
+  const next = [...clips];
+  const [moving] = next.splice(fromIndex, 1);
+  let targetIndex = Math.max(0, Math.min(clips.length, dropIndex));
+  if (fromIndex < targetIndex) targetIndex -= 1;
+  next.splice(Math.max(0, Math.min(next.length, targetIndex)), 0, moving);
+  return next;
+}
+
 function bmdDrawCover(ctx, source, width, height, scale, offsetX, offsetY) {
   if (!source || !source.videoWidth && !source.naturalWidth) return false;
   const sourceWidth = source.videoWidth || source.naturalWidth || source.width;
@@ -138,8 +149,8 @@ function bmdDrawSceneText(ctx, clip, width, height, layout, branding) {
   const align = clip.textAlign || "center";
   const padding = width * .08;
   const textWidth = width - padding * 2;
-  const headlineSize = Math.round(width * .075);
-  const bodySize = Math.round(width * .034);
+  const headlineSize = Math.round(width * .075 * (clip.headSizeScale ?? 1));
+  const bodySize = Math.round(width * .034 * (clip.bodySizeScale ?? 1));
   const headlineLineHeight = headlineSize * 1.18;
   const bodyLineHeight = bodySize * 1.55;
 
@@ -403,12 +414,16 @@ function VideoEditor({
   const [exportState, setExportState] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(false);
   const [imageDragging, setImageDragging] = React.useState(false);
+  const [canvasLayer, setCanvasLayer] = React.useState("media");
+  const [timelineDrag, setTimelineDrag] = React.useState(null);
   const [textMode, setTextMode] = React.useState("scene");
   const [commonText, setCommonText] = React.useState({
     headline: "",
     body: "",
     accentColor: "#ffffff",
     textAlign: "center",
+    headSizeScale: 1,
+    bodySizeScale: 1,
     sourceLabel: "",
   });
   const [logoImage, setLogoImage] = React.useState(null);
@@ -430,6 +445,11 @@ function VideoEditor({
   const audioGraphRef = React.useRef(null);
   const imageDragRef = React.useRef(null);
   const brandingLogoInputRef = React.useRef(null);
+  const timelineScrollRef = React.useRef(null);
+  const pendingFocusRef = React.useRef(null);
+  const timelineDragIdRef = React.useRef(null);
+  const textSettingsRef = React.useRef(null);
+  const mediaSettingsRef = React.useRef(null);
 
   const timeline = React.useMemo(() => bmdBuildTimeline(clips), [clips]);
   const selectedClip = clips.find((clip) => clip.id === selectedId) || null;
@@ -476,6 +496,8 @@ function VideoEditor({
           body: commonText.body,
           accentColor: commonText.accentColor,
           textAlign: commonText.textAlign,
+          headSizeScale: commonText.headSizeScale,
+          bodySizeScale: commonText.bodySizeScale,
         }
         : clip;
       let source = null;
@@ -832,8 +854,35 @@ function VideoEditor({
     setTimeout(() => drawPreview(next), 80);
   };
 
+  React.useEffect(() => {
+    const pending = pendingFocusRef.current;
+    const clipId = pending?.clipId;
+    if (!clipId) return;
+    const item = timeline.items.find((entry) => entry.clip.id === clipId);
+    if (!item) return;
+    pendingFocusRef.current = null;
+    setSelectedId(clipId);
+    setCanvasLayer("media");
+    seekTo(Math.min(item.end, item.start + .02));
+    requestAnimationFrame(() => {
+      const scroller = timelineScrollRef.current;
+      if (scroller) {
+        if (pending.scroll === "end") {
+          scroller.scrollTo({ left: scroller.scrollWidth, behavior: "smooth" });
+        } else {
+          scroller.querySelector(`[data-clip-id="${clipId}"]`)?.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest",
+            inline: "nearest",
+          });
+        }
+      }
+    });
+  }, [timeline]);
+
   const selectClip = (clip) => {
     setSelectedId(clip.id);
+    setCanvasLayer("media");
     const item = timeline.items.find((entry) => entry.clip.id === clip.id);
     if (
       !item || currentTimeRef.current >= item.start &&
@@ -843,22 +892,53 @@ function VideoEditor({
   };
 
   const startImageDrag = (event) => {
-    if (!selectedClip) return;
+    const activeItems = timeline.items.filter((item) =>
+      currentTimeRef.current >= item.start - .02 &&
+      currentTimeRef.current <= item.end + .02
+    ).slice(-2);
+    let activeItem = activeItems[activeItems.length - 1];
+    if (activeItems.length === 2) {
+      const [first, second] = activeItems;
+      const transitionProgress = (currentTimeRef.current - second.start) /
+        Math.max(.01, first.transitionDuration);
+      activeItem = transitionProgress < .5 ? first : second;
+    }
+    const clip = activeItem?.clip || selectedClip;
+    if (!clip) return;
+    setSelectedId(clip.id);
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const relativeY = (event.clientY - bounds.top) / bounds.height;
+    const layout = clip.layout || "media";
+    let nextLayer = "media";
+    if (layout === "split" && relativeY >= .6) {
+      nextLayer = relativeY < .76 ? "headline" : "body";
+    } else if (layout === "overlay" && relativeY >= .48) {
+      nextLayer = relativeY < .7 ? "headline" : "body";
+    }
+    setCanvasLayer(nextLayer);
+    requestAnimationFrame(() => {
+      const target = nextLayer === "media"
+        ? mediaSettingsRef.current
+        : textSettingsRef.current;
+      target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    if (nextLayer !== "media") return;
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     imageDragRef.current = {
+      clipId: clip.id,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      offsetX: selectedClip.imageOffsetX ?? 0,
-      offsetY: selectedClip.imageOffsetY ?? 0,
+      offsetX: clip.imageOffsetX ?? 0,
+      offsetY: clip.imageOffsetY ?? 0,
     };
     setImageDragging(true);
   };
 
   const moveImageDrag = (event) => {
     const drag = imageDragRef.current;
-    if (!drag || !selectedClip) return;
+    if (!drag) return;
     event.preventDefault();
     const bounds = event.currentTarget.getBoundingClientRect();
     const nextX = Math.max(
@@ -875,7 +955,7 @@ function VideoEditor({
         drag.offsetY + (event.clientY - drag.startY) / (bounds.height / 2),
       ),
     );
-    updateClip(selectedClip.id, {
+    updateClip(drag.clipId, {
       imageOffsetX: nextX,
       imageOffsetY: nextY,
     });
@@ -926,10 +1006,15 @@ function VideoEditor({
         body: "",
         accentColor: "#ffffff",
         textAlign: "center",
+        headSizeScale: 1,
+        bodySizeScale: 1,
       };
     });
     setClips((list) => [...list, ...added]);
-    if (!selectedId) setSelectedId(added[0].id);
+    const lastAdded = added[added.length - 1];
+    pendingFocusRef.current = { clipId: lastAdded.id, scroll: "end" };
+    setSelectedId(lastAdded.id);
+    setCanvasLayer("media");
   };
 
   const addClipboardBlobs = (blobs) => {
@@ -1003,6 +1088,16 @@ function VideoEditor({
       return next;
     });
     setCurrentTime(0);
+  };
+
+  const reorderClip = (id, dropIndex) => {
+    stopPlayback();
+    pendingFocusRef.current = { clipId: id, scroll: "nearest" };
+    setSelectedId(id);
+    setCanvasLayer("media");
+    setClips((list) => bmdReorderClips(list, id, dropIndex));
+    timelineDragIdRef.current = null;
+    setTimelineDrag(null);
   };
 
   const selectBgm = (id) => {
@@ -1189,6 +1284,25 @@ function VideoEditor({
   };
 
   const bgmUrl = getBgmUrl(bgmId);
+  const baseTimelineWidths = timeline.items.map((item, index) => {
+    const visibleDuration = Math.max(
+      .2,
+      item.duration -
+        (index < timeline.items.length - 1 ? item.transitionDuration : 0),
+    );
+    return Math.max(76, visibleDuration * 64);
+  });
+  const baseTimelineWidth = baseTimelineWidths.reduce(
+    (sum, width) => sum + width,
+    0,
+  );
+  const timelinePixelWidth = Math.max(
+    540,
+    baseTimelineWidth,
+  );
+  const timelineClipWidths = baseTimelineWidths.map((width) =>
+    baseTimelineWidth ? width * timelinePixelWidth / baseTimelineWidth : width
+  );
   const activeText = textMode === "common" ? commonText : selectedClip;
 
   const importImageTabText = () => {
@@ -1198,6 +1312,8 @@ function VideoEditor({
       body: imageTextSource.body || "",
       accentColor: imageTextSource.accentColor || "#ffffff",
       textAlign: imageTextSource.textAlign || "center",
+      headSizeScale: imageTextSource.headSizeScale ?? 1,
+      bodySizeScale: imageTextSource.bodySizeScale ?? 1,
       sourceLabel: imageTextSource.sourceLabel || "이미지 만들기",
     });
     setTextMode("common");
@@ -1435,23 +1551,167 @@ function VideoEditor({
                 </div>
               )}
               {clips.length > 0 && selectedClip && (
-                <div className="video-image-drag-badge">
-                  드래그해서 {selectedClip.type === "video" ? "영상" : "사진"}
-                  {" "}
-                  위치 조정
-                </div>
+                <>
+                  <div
+                    className={`video-canvas-selection is-${canvasLayer} layout-${
+                      selectedClip.layout || "media"
+                    }`}
+                  />
+                  <div className="video-image-drag-badge">
+                    {canvasLayer === "media"
+                      ? `드래그해서 ${
+                        selectedClip.type === "video" ? "영상" : "사진"
+                      } 위치 조정`
+                      : canvasLayer === "headline"
+                      ? "제목 선택됨 · 오른쪽에서 편집"
+                      : "본문 선택됨 · 오른쪽에서 편집"}
+                  </div>
+                </>
               )}
             </div>
           </div>
-          <div className="video-transport">
-            <button
-              className="video-play-button"
-              type="button"
-              disabled={!clips.length}
-              onClick={togglePlayback}
-            >
-              {playing ? "Ⅱ" : "▶"}
-            </button>
+          <div className="video-timeline-editor">
+            <div className="video-timeline-toolbar">
+              <button
+                className="video-play-button"
+                type="button"
+                disabled={!clips.length}
+                onClick={togglePlayback}
+              >
+                {playing ? "Ⅱ" : "▶"}
+              </button>
+              <div className="video-timeline-title">
+                편집 타임라인
+                <span>썸네일을 끌어서 순서를 변경하세요</span>
+              </div>
+              <span className="video-timecode">
+                {bmdVideoTime(currentTime)} / {bmdVideoTime(timeline.total)}
+              </span>
+            </div>
+            <div className="video-timeline-scroll" ref={timelineScrollRef}>
+              <div
+                className="video-timeline-strip"
+                style={{ width: `${timelinePixelWidth}px` }}
+                onClick={(event) => {
+                  if (event.target.closest(".video-timeline-clip")) return;
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  const ratio = Math.max(
+                    0,
+                    Math.min(1, (event.clientX - bounds.left) / bounds.width),
+                  );
+                  seekTo(ratio * timeline.total);
+                }}
+              >
+                {timeline.items.map((item, index) => {
+                  const clip = item.clip;
+                  const dropBefore = timelineDrag?.dropIndex === index;
+                  const dropAfter = timelineDrag?.dropIndex === index + 1;
+                  return (
+                    <button
+                      key={clip.id}
+                      data-clip-id={clip.id}
+                      className={`video-timeline-clip ${
+                        selectedId === clip.id ? "is-selected" : ""
+                      } ${
+                        timelineDrag?.clipId === clip.id ? "is-dragging" : ""
+                      } ${dropBefore ? "drop-before" : ""} ${
+                        dropAfter ? "drop-after" : ""
+                      }`}
+                      style={{ width: `${timelineClipWidths[index]}px` }}
+                      type="button"
+                      draggable
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        selectClip(clip);
+                      }}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", clip.id);
+                        timelineDragIdRef.current = clip.id;
+                        setTimelineDrag({ clipId: clip.id, dropIndex: index });
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        const bounds = event.currentTarget
+                          .getBoundingClientRect();
+                        const dropIndex = index +
+                          (event.clientX > bounds.left + bounds.width / 2
+                            ? 1
+                            : 0);
+                        if (timelineDrag?.dropIndex !== dropIndex) {
+                          setTimelineDrag((current) => ({
+                            clipId: timelineDragIdRef.current ||
+                              current?.clipId || clip.id,
+                            dropIndex,
+                          }));
+                        }
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const clipId = timelineDragIdRef.current ||
+                          timelineDrag?.clipId ||
+                          event.dataTransfer.getData("text/plain");
+                        if (clipId) {
+                          const bounds = event.currentTarget
+                            .getBoundingClientRect();
+                          const dropIndex = index +
+                            (event.clientX > bounds.left + bounds.width / 2
+                              ? 1
+                              : 0);
+                          reorderClip(clipId, dropIndex);
+                        }
+                      }}
+                      onDragEnd={() => {
+                        timelineDragIdRef.current = null;
+                        setTimelineDrag(null);
+                      }}
+                    >
+                      {clip.type === "image"
+                        ? <img src={clip.url} alt="" draggable="false" />
+                        : (
+                          <video
+                            src={clip.url}
+                            muted
+                            preload="metadata"
+                            draggable="false"
+                          />
+                        )}
+                      <span className="video-timeline-shade" />
+                      <span className="video-timeline-index">{index + 1}</span>
+                      <span className="video-timeline-duration">
+                        {item.duration.toFixed(1)}초
+                      </span>
+                      <span className="video-timeline-layout">
+                        {(clip.layout || "media") === "split"
+                          ? `${clip.type === "video" ? "영상" : "사진"}+글`
+                          : (clip.layout || "media") === "overlay"
+                          ? `${clip.type === "video" ? "영상" : "사진"} 위 글`
+                          : `${clip.type === "video" ? "영상" : "사진"}만`}
+                      </span>
+                      {index < timeline.items.length - 1 &&
+                        clip.transition !== "none" && (
+                        <span className="video-timeline-transition">↔</span>
+                      )}
+                    </button>
+                  );
+                })}
+                {timeline.total > 0 && (
+                  <span
+                    className="video-timeline-playhead"
+                    style={{
+                      left: `${
+                        Math.min(
+                          timelinePixelWidth,
+                          currentTime / timeline.total * timelinePixelWidth,
+                        )
+                      }px`,
+                    }}
+                  />
+                )}
+              </div>
+            </div>
             <input
               className="video-scrubber"
               type="range"
@@ -1460,11 +1720,9 @@ function VideoEditor({
               step="0.01"
               value={Math.min(currentTime, timeline.total)}
               disabled={!clips.length}
+              aria-label="영상 재생 위치"
               onChange={(event) => seekTo(event.target.value)}
             />
-            <span className="video-timecode">
-              {bmdVideoTime(currentTime)} / {bmdVideoTime(timeline.total)}
-            </span>
           </div>
         </section>
 
@@ -1495,7 +1753,7 @@ function VideoEditor({
           </section>
 
           {selectedClip && (selectedClip.layout || "media") !== "media" && (
-            <section className="video-settings-section">
+            <section className="video-settings-section" ref={textSettingsRef}>
               <div className="video-settings-title">글 레이어</div>
               <div className="video-segmented video-text-mode">
                 <button
@@ -1530,26 +1788,78 @@ function VideoEditor({
                   </div>
                 </div>
               )}
-              <label className="video-text-field">
+              <label
+                className={`video-text-field ${
+                  canvasLayer === "headline" ? "is-selected" : ""
+                }`}
+              >
                 <span>제목</span>
                 <textarea
                   rows="2"
                   value={activeText?.headline || ""}
                   placeholder="제목을 입력하세요"
+                  onFocus={() => setCanvasLayer("headline")}
                   onChange={(event) =>
                     updateActiveText({
                       headline: event.target.value,
                     })}
                 />
               </label>
-              <label className="video-text-field">
+              <label
+                className={`video-text-field ${
+                  canvasLayer === "body" ? "is-selected" : ""
+                }`}
+              >
                 <span>본문</span>
                 <textarea
                   rows="3"
                   value={activeText?.body || ""}
                   placeholder="본문을 입력하세요"
+                  onFocus={() => setCanvasLayer("body")}
                   onChange={(event) =>
                     updateActiveText({ body: event.target.value })}
+                />
+              </label>
+              <label className="video-image-slider">
+                <span>
+                  <b>제목 크기</b>
+                  <em>
+                    {Math.round((activeText?.headSizeScale ?? 1) * 100)}%
+                  </em>
+                </span>
+                <input
+                  className="video-range"
+                  type="range"
+                  min=".5"
+                  max="2"
+                  step=".05"
+                  value={activeText?.headSizeScale ?? 1}
+                  onFocus={() => setCanvasLayer("headline")}
+                  onChange={(event) =>
+                    updateActiveText({
+                      headSizeScale: Number(event.target.value),
+                    })}
+                />
+              </label>
+              <label className="video-image-slider">
+                <span>
+                  <b>본문 크기</b>
+                  <em>
+                    {Math.round((activeText?.bodySizeScale ?? 1) * 100)}%
+                  </em>
+                </span>
+                <input
+                  className="video-range"
+                  type="range"
+                  min=".5"
+                  max="2"
+                  step=".05"
+                  value={activeText?.bodySizeScale ?? 1}
+                  onFocus={() => setCanvasLayer("body")}
+                  onChange={(event) =>
+                    updateActiveText({
+                      bodySizeScale: Number(event.target.value),
+                    })}
                 />
               </label>
               <div className="video-control-row">
@@ -1596,7 +1906,7 @@ function VideoEditor({
           )}
 
           {selectedClip && (
-            <section className="video-settings-section">
+            <section className="video-settings-section" ref={mediaSettingsRef}>
               <div className="video-settings-title">
                 선택한 {selectedClip.type === "video" ? "영상" : "사진"}
               </div>
